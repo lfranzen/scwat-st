@@ -1,2 +1,7 @@
 /data
-.Rproj.user
+.Rproj
+*.rds
+*.tiff
+/scripts/*.html
+/scripts/*_cache
+/scripts/*_files
