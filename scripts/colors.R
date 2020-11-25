@@ -1,4 +1,6 @@
 #' Color palette to be used in the analyses
+
+library(RColorBrewer)
 colors_main <- c("#A5D7E5", "#FEC567")
 colors_multi <- c("#a5d7e5",
                   "#fec567",
