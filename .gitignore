@@ -6,3 +6,4 @@
 /scripts/*.html
 /scripts/*_cache
 /scripts/*_files
+.Rproj.user
