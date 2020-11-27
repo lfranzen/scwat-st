@@ -22,16 +22,30 @@ source(file.path(DIR_WD, "colors.R"))
 #' READ DATA
 #' 'Baseline' Visium data
 se_base <- readRDS(file.path(DIR_RES, "se-object.visium_baseline.rds"))
-markers_base <- as.data.frame(read_excel(file.path(DIR_RES, "tables", "visium_baseline.markers_clusterdea.xlsx"), sheet = 1))
 canno_base <- read.csv(file.path(DIR_RES, "tables", "visium_baseline.clustering_annotations.csv"), stringsAsFactors = F)
 colnames(canno_base)[colnames(canno_base)=="seurat_clusters"] <- "cluster"
+
+markers_list_base <- list()
+for(c in sort(canno_base$cluster)){
+  markers_list_base[[c]] <- as.data.frame(read_excel(file.path(DIR_RES, "tables", "visium_baseline.markers_clusterdea.xlsx"), sheet = paste0("cluster_", c)))
+  markers_list_base[[c]] <- subset(markers_list_base[[c]], avg_logFC>0 & p_val_adj<0.05)
+  markers_list_base[[c]]$cluster <- c
+}
+markers_base <- do.call(rbind.data.frame, markers_list_base)
 markers_base <- merge(x=markers_base, y=canno_base, by="cluster") %>% dplyr::arrange(as.numeric(cluster))
 
 #' 'Insulin' Visium data
 se_ins <- readRDS(file.path(DIR_RES, "se-object.visium_insulin.rds"))
-markers_ins <- as.data.frame(read_excel(file.path(DIR_RES, "tables", "visium_insulin.markers_clusterdea.xlsx"), sheet = 1))
 canno_ins <- read.csv(file.path(DIR_RES, "tables", "visium_insulin.clustering_annotations.csv"), stringsAsFactors = F)
 colnames(canno_ins)[colnames(canno_ins)=="seurat_clusters"] <- "cluster"
+
+markers_list_ins <- list()
+for(c in sort(canno_ins$cluster)){
+  markers_list_ins[[c]] <- as.data.frame(read_excel(file.path(DIR_RES, "tables", "visium_insulin.markers_clusterdea.xlsx"), sheet = paste0("cluster_", c)))
+  markers_list_ins[[c]] <- subset(markers_list_ins[[c]], avg_logFC>0 & p_val_adj<0.05)
+  markers_list_ins[[c]]$cluster <- c
+}
+markers_ins <- do.call(rbind.data.frame, markers_list_ins)
 markers_ins <- merge(x=markers_ins, y=canno_ins, by="cluster") %>% dplyr::arrange(as.numeric(cluster))
 
 
@@ -114,26 +128,26 @@ plot_jaccard_pheatmap <- function (jaccards,
 
 #' plot
 p1 <- plot_jaccard_pheatmap(jaccards = jacc_base, 
-                            jaccard.max = 0.2,
+                            jaccard.max = 0.3,
                             cluster.annotation.df = canno_base, 
                             column.name.use = "cluster_anno", 
-                            colors.hm = viridis::viridis(40))
+                            colors.hm = viridis::viridis(20))
  
 p2 <- plot_jaccard_pheatmap(jaccards = jacc_ins, 
-                            jaccard.max = 0.2,
+                            jaccard.max = 0.3,
                             cluster.annotation.df = canno_ins, 
                             column.name.use = "cluster_anno", 
-                            colors.hm = viridis::viridis(40))
+                            colors.hm = viridis::viridis(20))
 
 
 
 fname <- "plot_cluster_corr_jaccard.visium_baseline"
-pdf(file = file.path(DIR_FIG, paste0(fname, ".pdf")), width = 13, height = 12);p1;dev.off()
-tiff(filename = file.path(DIR_FIG, paste0(fname, ".tiff")), units = "cm", width = 13*2.5, height = 12*2.5, res = 600); p1; dev.off()
+pdf(file = file.path(DIR_FIG, paste0(fname, ".pdf")), width = 9.8, height = 9);p1;dev.off()
+tiff(filename = file.path(DIR_FIG, paste0(fname, ".tiff")), units = "cm", width = 9.8*2.5, height = 9*2.5, res = 600); p1; dev.off()
 
 fname <- "plot_cluster_corr_jaccard.visium_insulin"
-pdf(file = file.path(DIR_FIG, paste0(fname, ".pdf")), width = 13, height = 12);p2;dev.off()
-tiff(filename = file.path(DIR_FIG, paste0(fname, ".tiff")), units = "cm", width = 13*2.5, height = 12*2.5, res = 600); p2; dev.off()
+pdf(file = file.path(DIR_FIG, paste0(fname, ".pdf")), width = 9.8, height = 9);p2;dev.off()
+tiff(filename = file.path(DIR_FIG, paste0(fname, ".tiff")), units = "cm", width = 9.8*2.5, height = 9*2.5, res = 600); p2; dev.off()
 
 
 # ===================================
@@ -198,22 +212,23 @@ legend_colors <- list(Cluster_ins = legend_colors_ins,
 
 
 #' plot
+max_jacc <- 0.4
 jaccards2 <- jaccards
-jaccards2[jaccards2>0.5] <- 0.5
+jaccards2[jaccards2>max_jacc] <- max_jacc
 
 p <- pheatmap::pheatmap(jaccards2, 
                         annotation_row = groups_clus_base,
                         annotation_col = groups_clus_ins,
                         annotation_colors = legend_colors,
-                        color = viridis::viridis(40), 
+                        color = viridis::viridis(20), 
                         border_color = NA, 
                         annotation_legend = F,
                         legend = T,
                         fontsize = 14)
 
 fname <- "plot_cluster_corr_jaccard.comparison"
-pdf(file = file.path(DIR_FIG, paste0(fname, ".pdf")), width = 12.5, height = 12);p;dev.off()
-tiff(filename = file.path(DIR_FIG, paste0(fname, ".tiff")), units = "cm", width = 12.5*2.5, height = 12*2.5, res = 600); p; dev.off()
+pdf(file = file.path(DIR_FIG, paste0(fname, ".pdf")), width = 9.8, height = 9);p;dev.off()
+tiff(filename = file.path(DIR_FIG, paste0(fname, ".tiff")), units = "cm", width = 9.8*2.5, height = 9*2.5, res = 600); p; dev.off()
 
 
 #==========================================================================
