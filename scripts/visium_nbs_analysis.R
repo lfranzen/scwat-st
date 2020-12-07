@@ -69,6 +69,9 @@ for(c in c_include){
 nbs_df <- se[[]][, c("seurat_clusters", grep(pattern = "nbs", colnames(se[[]]), value = T))]
 write.table(nbs_df, file.path(DIR_RES, "tables", paste0("nbs_data.", ANALYSIS, ".tsv")), quote = F, sep = "\t", row.names = T)
 
+# nbs_df <- read.table(file = file.path(DIR_RES, "tables", paste0("nbs_data.", ANALYSIS, ".tsv")), header = T, sep = "\t")
+
+
 c_count <- nbs_df %>%
   group_by(seurat_clusters) %>%
   dplyr::count()
@@ -109,6 +112,7 @@ for (i in seq(1:dim(nbs_adjmat_norm)[1])) {
     }
   }
 }
+
 
 rownames(nbs_adjmat) <- rownames(nbs_adjmat_norm) <- paste0("C", c_include)
 colnames(nbs_adjmat) <- colnames(nbs_adjmat_norm) <- paste0("C", c_include)
@@ -169,3 +173,7 @@ for(cluster_plot in names(e_sum)){
        edge.curved=0.1)
 }
 dev.off()
+
+
+
+
