@@ -103,7 +103,7 @@ plot_jaccard_pheatmap <- function (jaccards,
   groups_colors <- c()
   for(c in cats){
     # print(c)
-    color_add <- cluster.annotation.df[cluster.annotation.df[,hm.category] == c, hm.cluster.colors][2]
+    color_add <- cluster.annotation.df[cluster.annotation.df[,hm.category] == c, hm.cluster.colors][1]
     groups_colors <- c(groups_colors, color_add)
   }
   names(groups_colors) <- cats
@@ -201,7 +201,7 @@ cats <- as.character(unique(groups_clus_ins$Category))
 groups_colors <- c()
 for(c in cats){
   # print(c)
-  color_add <- canno_ins[canno_ins$cluster_group == c, "cluster_color"][2]
+  color_add <- canno_ins[canno_ins$cluster_group == c, "cluster_color"][1]
   groups_colors <- c(groups_colors, color_add)
 }
 names(groups_colors) <- cats
