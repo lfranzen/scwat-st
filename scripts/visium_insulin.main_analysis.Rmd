@@ -1,0 +1,1329 @@
+---
+title: "Visium data - 'Insulin' samples: Main processing and analysis using Seurat/STUtility"
+author: "L. Franzén lovisa.franzen@scilifelab.se"
+date: '`r format(Sys.Date(), "%B %d, %Y")`'
+output: 
+  html_document:
+    theme: cosmo
+    highlight: tango
+    css: style.css
+    code_folding: "hide"
+    toc: true
+    toc_depth: 3
+    toc_float:
+      collapsed: false
+    number_sections: false
+    
+---
+
+***
+  
+# Description    
+  
+Data processing and analysis of Visium data of subcutaneous white adipose tissue (scWAT) from 4 subjects with samples collected before and 2 h into a hyperinsulinemic-euglycemic clamp.  
+  
+The standard Visium protocol (Rev A) as published by 10x Genomics was applied to generate the Visium sample libraries. Specific modifications of the protocol to adapt it for adipose tissue included using a section thickness of 16 µm and permeabilizing the tissue using a 15 min incubation with the permeabilization enzyme.  
+  
+Sequencing of the Visium libraries was performed on the Illumina NovaSeq6000 platform, using a P4 flow cell, resulting in approximately 90M read-pairs per sample. The sequencing was performed by the National Genomics Infrastructure in Genomics Production Stockholm.  
+  
+Processing of the FastQ sequencing files was performed using the Spaceranger (version 1.0.0) pipeline, mapping to the GRCh38-3.0.0 genome. Manual selection of spots to include in the analysis was performed using the Loupe Browser.
+  
+  
+Analysis of the Spaceranger output data was performed using [STUtility](https://ludvigla.github.io/STUtility_web_site/index.html), which in turn makes use of the [Seurat version 3, (3.1.5)](https://satijalab.org/seurat/) R package.
+  
+  
+The main data processing/analysis steps include the following:  
+
+1. **Initialize**: Set up Seurat object and perform initial filtering of spots and genes  
+2. **QC**: Further filter spots and genes based on specified criteria  
+3. **SCTransform**: Peform normalization and scaling of the data using the 7000 most variable genes across the data points  
+4. **Dimensionality reduction**: Independent Component Analysis (ICA) followed by [Harmony](https://portals.broadinstitute.org/harmony/articles/quickstart.html) (v 1.0) to remove subject an batch differences. The Harmony vectors, of which some uninformative vectors had been excluded, were used as input for UMAP and cluster analysis   
+5. **Clustering**: Performed using the `FindNeighbors()` and `FindClusters(algorithm = 1, resolution = k)` (Louvain) functions. Clustering resolution *k* = 0.9 was selected after manual inspection of various resolution alternatives  
+6. **Marker genes**: Cluster markers were identified using the `FindMarkers()` and `FindAllMarkers(only.pos = TRUE, min.pct = 0.1, logfc.threshold = 0.15)` functions  
+  
+<br>  
+
+***
+
+<br><br>  
+
+
+# Initialize  
+
+set.seed(42)
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+	echo = TRUE,
+	message = FALSE,
+	warning = FALSE,
+	cache = T,
+	cache.lazy = FALSE
+)
+
+set.seed(42)
+
+#' Load libs
+# devtools::install_version(package = 'Seurat', version = package_version('3.2.0'))
+# devtools::install_version(package = 'sctransform', version = package_version('0.2.1'))
+# devtools::install_version(package = 'ica', version = package_version('1.0-2))
+
+library(Matrix)
+library(tidyr)
+library(ggplot2)
+library(RColorBrewer)
+library(ggrepel)
+library(cowplot)
+library(patchwork)
+library(ggpubr)
+library(writexl)
+library(Seurat)
+library(STutility)
+library(harmony)
+library(clustree)
+library(ReactomePA)
+require(clusterProfiler)
+library(enrichplot)
+
+library(DT)
+library(knitr)
+
+library(rhdf5)  # be able to read .h5 files using h5read() function
+library(rjson)
+
+
+#' Define analysis tag
+ANALYSIS_ID <- "visium_insulin"
+
+
+#' Define project paths
+PROJECT_ID <- "visium"
+DIR_WD <- getwd()
+DIR_ROOT <- file.path(getwd(), "..")  # 
+
+DIR_DATA <- file.path(DIR_ROOT, "data", PROJECT_ID)
+DIR_RES <- file.path(DIR_ROOT, "results" , PROJECT_ID)
+DIR_FIG <- file.path(DIR_RES, "figures")
+
+
+#' Colors
+source(file.path(DIR_WD, "colors.R"))
+
+#' Define custom functions
+'%!in%' <- function(x,y)!('%in%'(x,y));
+```
+
+
+<br><br> 
+
+## Load necessary tables  
+  
+  
+### Sample meta data  
+
+```{r read_metadata}
+metadata <- read.table(file = file.path(DIR_DATA, "visium_sample_metadata.tsv"), sep = "\t", header = T, stringsAsFactors = F)
+metadata_selected <- metadata[!is.na(metadata$insulin_stim), ]  # all insulin samples (bef/aft)
+metadata_selected$seu_n <- seq( 1, dim(metadata_selected)[1] )
+
+datatable(metadata_selected, rownames = F, caption = paste("Sample metadata"))
+```
+  
+<br><br>
+
+### Gene annotations  
+
+```{r read_genetable}
+gene_table <- read.table(file = file.path(DIR_DATA, "..", "gene_annotation", "gene_table.tsv"), sep = "\t", header = T, stringsAsFactors = F )
+```
+
+<br><br>
+
+### InfoTable  
+
+```{r create_infotable}
+sample_select_ids <- metadata_selected[, "novaseq_id"]
+data_proc <- "trimmed"
+sample_dirs_all <- c()
+sample_names_all <- c()
+for (s in sample_select_ids){
+  message("Fetching data path for sample ", s)
+  sample_dirs <- grep(pattern = s, x = list.dirs(path = file.path(DIR_DATA), recursive = F, full.names = T), value = T)
+  sample_dirs <- grep(pattern = data_proc, x = sample_dirs, value = T)
+  sample_dirs_all <- c(sample_dirs_all, sample_dirs)
+  
+  sample_names <- grep(pattern = s, x = list.dirs(path = file.path(DIR_DATA), recursive = F, full.names = F), value = T)
+  sample_names <- grep(pattern = data_proc, x = sample_names, value = T)
+  sample_names_all <- c(sample_names_all, sample_names)
+}
+
+data_dirs <- paste0(sample_dirs_all, "/filtered_feature_bc_matrix.h5")
+spot_dirs <- paste0(sample_dirs_all, "/spatial/tissue_positions_list.csv")
+img_dirs <- paste0(sample_dirs_all, "/spatial/tissue_hires_image.png")
+img_scale_dirs <- paste0(sample_dirs_all, "/spatial/scalefactors_json.json")
+
+infoTable <- data.frame(samples = data_dirs,
+                        spotfiles = spot_dirs,
+                        imgs = img_dirs,
+                        json = img_scale_dirs,
+                        metadata_selected, 
+                        stringsAsFactors = F)
+```
+
+<br><br>
+
+## Create Seurat object
+  
+Since we only have few cells per spot, we are a bit more gentle with the filtering compared to what is common for other tissue types.  
+  
+```{r initialize_seuobj}
+se <- InputFromTable(infotable = infoTable, 
+                      min.gene.count = 100, 
+                      min.gene.spots = 5,
+                      min.spot.count = 200,
+                      platform="Visium")
+```
+
+<br><br>
+
+# QC
+
+```{r qc_stats}
+se <- PercentageFeatureSet(se, pattern = "^MT-", col.name = "percent.mt")
+se <- PercentageFeatureSet(se, pattern = "^MTRNR", col.name = "percent.MTRNR")
+se <- PercentageFeatureSet(se, pattern = "^MALAT1", col.name = "percent.MALAT1")
+se <- PercentageFeatureSet(se, pattern = "^RPS|^RPL", col.name = "percent.RP")
+se <- PercentageFeatureSet(se, features = c("HBB", "HBA2", "HBA1"), col.name = "percent.HB.genes")
+```
+
+
+```{r qc_filtering}
+#' Subset/filter data before normalizing and scaling data. Remove high MT-content spots, and high HB-content spots
+dim(se)
+paste("n spots with too high MT-content:", dim(subset(se[[]], percent.mt >= 40))[1] )
+paste("n spots with too high HB-content:", dim(subset(se[[]], percent.HB.genes >= 10))[1] )
+
+spots_mt <- rownames(subset(se[[]], percent.mt < 40))
+spots_hb <- rownames(subset(se[[]], percent.HB.genes < 10))
+spots <- intersect(spots_mt, spots_hb)
+
+#' FILTER 1
+se <- SubsetSTData(se, spots = spots)
+
+#' Filter genes: Updated list
+genes_remove <- grep("^HBB|^HBA|^MTRNR|^MT-|^MALAT1|^NEAT1|^RPS|^RPL", x = rownames(se), value = TRUE)
+
+#' Filter gene types
+gene_type_remove <- "antisense"
+genes_remove_2 <- c(genes_remove, gene_table[gene_table$gene_type %in% gene_type_remove, "gene_name"])
+
+paste("Removing", length(genes_remove), "genes due to specific selection")
+paste("Removing", length(intersect(rownames(se), genes_remove_2)), 
+      "genes in total when excluding biotype 'antisense'")
+
+#' Define genes to keep
+genes_keep <- setdiff(rownames(se), genes_remove_2)
+
+#' FILTER 2
+se <- se[genes_keep, ]
+dim(se)
+```
+
+<br><br>
+
+# SCTransform
+
+```{r sct, message=FALSE}
+n_var_feat <- 7000
+se <- SCTransform(se, variable.features.n = n_var_feat, verbose = F)
+```
+
+<br><br>
+
+# Dimensionality reduction
+
+## ICA  
+  
+*Warning: This step takes a long time to run due to the high number of spots and genes in the data*
+
+```{r dimred_ica, message=TRUE}
+se <- RunICA(object = se, verbose = T)
+```
+
+
+<br>
+
+
+## Harmony  
+
+Integration of data from the different donors, batch effects, and insulin stimulation using Harmony. Harmony is a method for integration of single cell RNA-seq data but we've seen promising use for it on ST data. It can easily be run together with Seurat using the `RunHarmony()` function.    
+http://htmlpreview.github.io/?https://github.com/immunogenomics/harmony/blob/master/docs/SeuratV3.html  
+
+*Korsunsky, I., Millard, N., Fan, J. et al. Fast, sensitive and accurate integration of single-cell data with Harmony. Nat Methods 16, 1289–1296 (2019). https://doi-org.focus.lib.kth.se/10.1038/s41592-019-0619-0* 
+
+```{r se_harmony}
+var_int <- c("date_exp", "subject_id", "insulin_stim")
+se <- RunHarmony(object = se, group.by.vars = var_int, assay.use="SCT", reduction = "ica", plot_convergence = TRUE)
+```
+
+<br>
+
+
+## Dimension selction  
+  
+Based on manual visual inspection of the vector loading for each harmony component, the most prominent and biologically relevant components were selected for further processing.
+  
+```{r dimred_dim_selection}
+red_use <- "harmony"
+dims_use <- 1:31
+```
+<br>
+
+
+## UMAP
+
+```{r dimred_umap}
+nneigh <- 50
+se <- RunUMAP(object = se, 
+              reduction = red_use, 
+              dims = dims_use,
+              n.neighbors = nneigh)
+
+se <- RunUMAP(object = se, 
+              reduction = "ica", 
+              dims = dims_use, 
+              n.neighbors = nneigh,
+              reduction.name = "umapICA",
+              seed.use = 42)
+
+se <- AddMetaData(se, se@reductions$umap@cell.embeddings, col.name = c("UMAP_1", "UMAP_2"))
+``` 
+  
+```{r dimred_umap_kspots}
+paste("k (spots):", dim(se@reductions$umap@cell.embeddings)[1])
+```
+  
+  
+```{r read_ori_se, include=FALSE}
+#' Read in original se object in case minor random changes in the ICA/UMAP has occurred
+se <- readRDS(file = file.path(DIR_DATA, "se-object.visium_insulin_ori.rds"))
+se@tools$Staffli@imgs <- infoTable$imgs
+```
+
+<br><br>
+  
+  
+# Clustering  
+
+Finding neighbours by constructing a Shared Nearest Neighbor (SSN) Graph, and then cluster using a modularity optimizer.  
+<br>
+  
+  
+## Generate clusters  
+
+```{r clustering_findneigh}
+se <- FindNeighbors(object = se, verbose = T, reduction = red_use, dims = dims_use)
+
+for (res in c(0, 0.2, seq(0.4, 1, 0.1), 1.2, 1.6, 2) ){
+  print(res)
+  se <- FindClusters(object = se, verbose = T, algorithm = 1, resolution = res)
+}
+```
+
+
+```{r clustering_setres}
+res_use <- "SCT_snn_res.0.9"
+se[["seurat_clusters"]] <- se[[res_use]]
+se[["seurat_clusters"]] <- as.factor(as.numeric(as.character(se[[]]$seurat_clusters))+1)   #as.factor(as.numeric(se[[]]$seurat_clusters))
+se <- SetIdent(se, value = "seurat_clusters")
+
+n <- length( unique(as.character(se@meta.data$seurat_clusters)) )
+print(paste("Number of clusters:", n))
+```
+<br>
+
+
+
+  
+## Cluster annotations  
+  
+```{r clustering_annotations, fig.width=6, fig.height=1}
+cluster_anno <- c(
+  "Unspecific 1",
+  "Unspecific 2",
+  "Unspecific 3",
+  "Adipocyte 2",
+  "Adipocyte 1",
+  "Adipocyte 3",
+  "Preadipocyte 1",
+  "Endothelial 1",
+  "Immune: Mac-Mono-DC 1",
+  "Endothelial 2",
+  "Unspecific 4",
+  "Immune: Mast cell",
+  "Preadipocyte 2",
+  "Vascular",
+  "Immune: NK cell",
+  "Immune: Mac-Mono-DC 2",
+  "Immune: B cell",
+  "Immune: Mac-Mono-DC 4",
+  "Unknown"
+)
+
+cluster_group <- c(
+  "Unspecific",
+  "Unspecific",
+  "Unspecific",
+  "Adipocyte",
+  "Adipocyte",
+  "Adipocyte",
+  "Fibroblast/Pread",
+  "Vascular",
+  "Immune",
+  "Vascular",
+  "Unspecific",
+  "Immune",
+  "Fibroblast/Pread",
+  "Vascular",
+  "Immune",
+  "Immune",
+  "Immune",
+  "Immune",
+  "Unknown"
+)
+
+c_anno <- data.frame(seurat_clusters = as.numeric(seq(1, 19)),
+                     cluster_anno = cluster_anno,
+                     cluster_group = cluster_group,
+                     stringsAsFactors = F)
+c_anno <- c_anno[order(as.character(c_anno$cluster_anno)),]
+cluster_anno <- NULL
+cluster_group <- NULL
+
+c_anno$cluster_color <- "#FFFFFF"
+c_anno$color_group <- "white"
+for( group in unique(c_anno$cluster_group) ){
+  print(group)
+  gs <- c_anno[c_anno$cluster_group == group, "cluster_group"]
+  gs_l <- length(gs)
+  c_add <- 1
+  if(group == "Unspecific"){
+    col_pal <- brewer.pal(gs_l+c_add+5, "Greys")[(2+c_add):(gs_l+c_add+1)]
+    c_anno[c_anno$cluster_group == group, "color_group"] <- "grey"
+  }
+  if(group == "Adipocyte"){
+    # col_pal <- brewer.pal(gs_l+c_add, "RdPu")[(1+c_add):(gs_l+c_add)]
+    col_pal <- color_func_pink(gs_l)
+    c_anno[c_anno$cluster_group == group, "color_group"] <- "purple"
+  }
+  if(group == "Fibroblast/Pread"){
+    # col_pal <- brewer.pal(gs_l+c_add+1, "Oranges")[(1+c_add):(gs_l+c_add)]
+    col_pal <- color_func_orange(gs_l)
+    c_anno[c_anno$cluster_group == group, "color_group"] <- "orange"
+  }
+  if(group == "Immune"){
+    col_pal <- (brewer.pal(gs_l+c_add+1, "Blues")[(1+c_add):(gs_l+c_add)])
+    # col_pal <- color_func_blue(gs_l)
+    c_anno[c_anno$cluster_group == group, "color_group"] <- "blue"
+  }
+  if(group == "Vascular"){
+    # col_pal <- brewer.pal(gs_l+c_add, "YlGn")[(1+c_add):(gs_l+c_add)]
+    col_pal <- color_func_green(gs_l)
+    c_anno[c_anno$cluster_group == group, "color_group"] <- "green"
+  }
+  if(group == "Unknown"){
+    # col_pal <- brewer.pal(gs_l+c_add+3, "BuPu")[(3+c_add):(gs_l+c_add+2)]
+    col_pal <- color_func_purp(gs_l)
+    c_anno[c_anno$cluster_group == group, "color_group"] <- "bupu"
+  }
+  print(col_pal)
+  c_anno[c_anno$cluster_group == group, "cluster_color"] <- as.character(col_pal)
+}
+
+```
+  
+```{r clustering_annotations_add}
+c_anno_long <- se[["seurat_clusters"]]
+c_anno_long$barcode <- rownames(c_anno_long)
+c_anno_long2 <- merge(c_anno_long, c_anno, by = "seurat_clusters", sort = F)
+rownames(c_anno_long2) <- c_anno_long2$barcode
+c_anno_long2 <- c_anno_long2[rownames(c_anno_long), ]
+
+se <- AddMetaData(se, c_anno_long2[, -c(1:2)])
+```
+  
+```{r clustering_annotations_export}
+fname <- paste0(ANALYSIS_ID, ".clustering_annotations.csv")
+write.csv(c_anno, file = file.path(DIR_RES, "tables", fname), row.names = F)
+```
+
+  
+## Cluster stats  
+  
+```{r clustering_countspots}
+cluster_prop <- se[[]]
+cluster_prop <- cluster_prop %>% 
+  group_by(subject_alias, seurat_clusters, condition, bmi, insulin_stim, m_value) %>%
+  dplyr::count()
+cluster_prop <- as.data.frame(cluster_prop)
+colnames(cluster_prop)[1] <- "subject"
+
+subject_spot_count <- aggregate(cluster_prop$n, by=list(subject = cluster_prop$subject), FUN=sum)
+colnames(subject_spot_count)[2] <- "total_spots"
+
+cluster_prop <- merge(x = cluster_prop, y = subject_spot_count, by = c("subject"))
+cluster_prop$cluster_pct_subject <- round((cluster_prop$n / cluster_prop$total_spots), digits = 3)*100
+
+write.csv(cluster_prop, file = file.path(DIR_RES, "tables", paste0(ANALYSIS_ID, ".clustering_countspots.csv")), row.names = F)
+datatable(cluster_prop, rownames = F, caption = paste("Cluster spot count and proportions"))
+```
+
+<br><br>
+
+
+# Cluster marker genes
+
+## Cluster DEA  
+  
+```{r markers_clusterdea}
+logf_thr <- 0.15
+cluster_calc_de <- unique(sort(as.numeric(as.character(subset(cluster_prop, n>3)$seurat_clusters))))
+markers_seu_clusters <- list()
+for( i in cluster_calc_de ) {
+  print(paste("Finding markers for cluster", i))
+  c <- paste0("cluster_", i)
+  
+  markers_seu_clusters[[c]] <- FindMarkers(se, ident.1 = as.character(i), logfc.threshold = logf_thr)
+}
+```
+
+```{r markers_clusterdea_posmarkers}
+top_n_genes <- 10
+logf_thr <- 0.15
+
+se_markers <- FindAllMarkers(se, 
+                             only.pos = TRUE, 
+                             min.pct = 0.1, 
+                             logfc.threshold = logf_thr
+                             )
+
+se_markers$pct.diff <- se_markers$pct.1 - se_markers$pct.2
+se_markers_top <- se_markers %>% 
+  group_by(as.numeric(cluster)) %>% 
+  dplyr::top_n(n = top_n_genes, wt = avg_logFC)
+
+se_markers_top <- se_markers_top[, c("gene", "cluster", "avg_logFC", "pct.1", "pct.2", "pct.diff", "p_val", "p_val_adj")]
+datatable(se_markers_top, rownames = F, caption = paste("Top", top_n_genes, "marker genes for the computed Seurat clusters"))
+```
+
+```{r markers_clusterdea_export}
+fname <- paste0(ANALYSIS_ID, ".markers_clusterdea.xlsx")
+
+sheets <- list()
+sheets["top_markers_all_clusters"] <- list(as.data.frame(se_markers_top))
+for (i in 1:length(markers_seu_clusters)){
+  c_name <- names(markers_seu_clusters[i])
+  c_data <- markers_seu_clusters[[i]]
+  c_names <- colnames(c_data)
+  c_data$gene <- rownames(c_data)
+  c_data <- c_data[, c("gene", c_names)]
+
+  sheets[c_name] <- list(c_data)
+}
+
+write_xlsx(
+  x = sheets,
+  path = file.path(DIR_RES, "tables", fname),
+  col_names = TRUE,
+  format_headers = TRUE
+)
+```
+
+<br><br>
+  
+## Pathway enrichment
+
+Marker gene pathways enrichment analysis for each cluster.
+
+```{r markers_pea, message=TRUE, warning=TRUE}
+pw_results_go <- list()
+pw_results_ra <- list()
+for(c in names(markers_seu_clusters)){  #  names(markers_seu_clusters)
+  d <- NULL
+  d <- markers_seu_clusters[[c]]
+  d <- subset(d, avg_logFC>0 & p_val_adj<0.05)
+  d$gene_name <- rownames(d)
+  eg = clusterProfiler::bitr(d$gene_name, fromType="SYMBOL", toType="ENTREZID", OrgDb="org.Hs.eg.db")
+  rownames(eg) <- eg$SYMBOL
+  colnames(eg) <- c("gene_name", "gene_entrez")
+  
+  d <- merge(d, eg, by = "gene_name", all = T)
+  rownames(d) <- d$gene_name
+  
+  print(c)
+  print(d$gene_name)
+  print("---------------------------------")
+  if( dim(d)[1] > 0 ) {
+    pw_genes <- d$gene_entrez[!is.na(d$gene_entrez)]
+    pw <- clusterProfiler::enrichGO(pw_genes, OrgDb="org.Hs.eg.db")
+    pw_ra <- enrichPathway(pw_genes)
+    
+    pw_results_go[[c]] <- pw
+    pw_results_ra[[c]] <- pw_ra
+    
+    if(!is.null(pw)) {
+      print("GO Enrichment: ")
+      print(subset(pw@result, p.adjust<0.05))
+      print("---------------------------------")
+    } else {
+      print("No GO Enrichment available for gene set.")
+    }
+    if(!is.null(pw_ra)) {
+      print("Reactome Enrichment: ")
+      print(subset(pw_ra@result, p.adjust<0.05))
+      print("---------------------------------")
+    } else {
+      print("No Reactome Enrichment available for gene set.")
+    }
+  } else {
+    print("Not enough genes to perform analysis --- Skipping cluster!")
+  }
+  print("==================================")
+}
+```
+  
+  
+```{r markers_pea_export}
+fname <- paste0(ANALYSIS_ID, ".markers_pathwayenrichment.xlsx")
+
+sheets <- list()
+for (c_name in names(pw_results_go)) {
+  pw_res <- pw_results_go[[c_name]]@result
+  sheets[paste0("GO_",c_name)] <- list(pw_res)
+}
+
+for (c_name in names(pw_results_ra)) {
+  pw_res <- pw_results_ra[[c_name]]@result
+  sheets[paste0("RA_",c_name)] <- list(pw_res)
+}
+
+write_xlsx(
+  x = sheets,
+  path = file.path(DIR_RES, "tables", fname),
+  col_names = TRUE,
+  format_headers = TRUE
+)
+```
+
+<br><br>
+  
+  
+# Other  
+
+## Insulin response  
+
+Using a few known insulin responding genes, we can create a insulin response gene signature to look for in the Visium data.  
+  
+*"The Adipose Transcriptional Response to Insulin Is Determined by Obesity, Not Insulin Sensitivity"*, Rydén et al.  
+  
+  
+```{r other_insulinsign}
+genes_insulin <- c("THRSP", "BHLHE40", "PPP1R3B", "PIK3R3")  # TODO! Add more genes?
+genes_insulin_intersect <- intersect(genes_insulin, rownames(se))
+print(genes_insulin_intersect)
+
+insulin_spot_sign <- colSums(GetAssayData(se, slot = "data", assay = "SCT")[genes_insulin_intersect, ])
+print(summary(insulin_spot_sign))
+se <- AddMetaData(se, insulin_spot_sign, col.name = "insulin_signature")
+```
+
+
+```{r other_insulinsign_df}
+cut_ins <- median(se@meta.data[se@meta.data$insulin_signature>0, "insulin_signature"])
+
+se@meta.data$insulin_cat <- "low"
+se@meta.data[se@meta.data$insulin_signature > cut_ins, "insulin_cat"] <- "high"
+
+df_ins_prop <- se@meta.data
+df_ins_prop <- df_ins_prop %>%
+  group_by(condition, subject_alias, m_value, insulin_stim, insulin_cat) %>%
+  dplyr::count()
+
+df_ins_prop$pct <- 0
+for(s in unique(df_ins_prop$subject_alias)) {
+  sum_spots <- sum(df_ins_prop[df_ins_prop$subject_alias %in% s, "n"])
+  df_ins_prop[df_ins_prop$subject_alias %in% s, "pct"] <- (round(df_ins_prop[df_ins_prop$subject_alias %in% s, "n"] / sum_spots, digits = 3))*100
+}
+
+df_ins_prop$cut <- cut_ins
+df_ins_prop
+```
+
+
+<br><br>
+
+***
+  
+  
+# Plots  
+  
+  
+## QC   
+  
+```{r qc_stats_violin_all, fig.width=24, fig.height=4}
+feat_plot <- c("nFeature_RNA", "nCount_RNA", "percent.mt", "percent.MTRNR", "percent.HB.genes", "percent.MALAT1", "percent.RP")
+VlnPlot(se, group.by = "sample_id", 
+        features = feat_plot, 
+        ncol = length(feat_plot), 
+        pt.size = 0)
+```
+  
+```{r qc_stats_violin,fig.width=6, fig.height=4}
+p <- VlnPlot(se, 
+            group.by = "subject_alias", 
+            features = c("nFeature_RNA", "nCount_RNA"), 
+            ncol = 2, 
+            cols = c(rep(colors_multi[1], 3), rep(colors_multi[2], 5), rep(colors_multi[3], 2)),
+            pt.size = 0) & 
+  scale_y_log10() &
+  theme(axis.title.x = element_blank()) & 
+  geom_boxplot(width=0.2, outlier.size = .5);p
+
+fname <- paste0(ANALYSIS_ID, ".qc_stats_violin")
+pdf(file = file.path(DIR_FIG, paste0(fname, ".pdf")), width = 6, height = 4);p;dev.off()
+```
+  
+```{r qc_stats_violin2,fig.width=4, fig.height=4}
+d_plot <- data.frame(se[[]])
+d_plot1 <- d_plot[, c("subject_alias", "nCount_RNA")]
+colnames(d_plot1) <- c("subject_alias", "qc_value")
+d_plot1$qc_stat <- "UMIs"
+
+d_plot2 <- d_plot[, c("subject_alias", "nFeature_RNA")]
+colnames(d_plot2) <- c("subject_alias", "qc_value")
+d_plot2$qc_stat <- "Genes"
+
+d_plot3 <- rbind(d_plot1, d_plot2)
+
+p <- ggplot(d_plot3, aes(x=qc_stat, y=qc_value)) +
+  geom_violin(fill="grey80", color=NA) +
+  geom_boxplot(width=0.2, outlier.size = 0.2) +
+  scale_y_log10() +
+  annotation_logticks(sides = "l") +
+  labs(title="", x="", y="count per spot") +
+  theme_classic() +
+  theme(plot.title = element_text(hjust=0.5, face = "bold"), legend.position = "none", legend.title = element_blank());p
+
+fname <- paste0(ANALYSIS_ID, ".qc_stats_violin2")
+pdf(file = file.path(DIR_FIG, paste0(fname, ".pdf")), width = 3, height = 3);p;dev.off()
+```
+  
+```{r qc_stats_spatial, fig.width=20, fig.height=12}
+color_scale <- c("white", "orange", "red")
+p1 <- ST.FeaturePlot(se, features = c("percent.mt"), dark.theme = F, cols = color_scale, max.cutoff = 40)
+p2 <- ST.FeaturePlot(se, features = c("percent.HB.genes"), dark.theme = F, cols = color_scale, max.cutoff = 20)
+p3 <- ST.FeaturePlot(se, features = c("percent.MTRNR"), dark.theme = F, cols = color_scale)
+p4 <- ST.FeaturePlot(se, features = c("percent.MALAT1"), dark.theme = F, cols = color_scale)
+p5 <- ST.FeaturePlot(se, features = c("percent.RP"), dark.theme = F, cols = color_scale)
+
+p <- (p1+p2+p3)/(p4+p5+patchwork::plot_spacer());p
+
+fname <- paste0(ANALYSIS_ID, ".qc_stats_spatial")
+pdf(file = file.path(DIR_FIG, paste0(fname, ".pdf")), width = 32, height = 18);p;dev.off()
+tiff(filename = file.path(DIR_FIG, paste0(fname, ".tiff")), units = "cm", width = 32*2.8, height = 18*2.8, res = 600); p; dev.off()
+```
+
+<br><br>
+
+## Dimensionality reduction  
+
+### ICA 
+```{r dimred_ica_hm, fig.width = 8, fig.height = 12}
+fname <- paste0(ANALYSIS_ID, ".dimred_ica_hm")
+pdf(file = file.path(DIR_FIG, paste0(fname, ".pdf")), width = 14, height = 20)
+p1 <- DimHeatmap(se, dims = 1:18, cells = 500, nfeatures = 16, balanced = TRUE, reduction = "ica", ncol = 3);p1
+p2 <- DimHeatmap(se, dims = 19:36, cells = 500, nfeatures = 16, balanced = TRUE, reduction = "ica", ncol = 3);p2
+p3 <- DimHeatmap(se, dims = 37:50, cells = 500, nfeatures = 16, balanced = TRUE, reduction = "ica", ncol = 3);p3
+dev.off()
+``` 
+  
+  
+### Harmony   
+
+```{r dimred_harmony_hm, fig.width = 8, fig.height = 12}
+fname <- paste0(ANALYSIS_ID, ".dimred_harmony_hm")
+pdf(file = file.path(DIR_FIG, paste0(fname, ".pdf")), width = 14, height = 20)
+p1 <- DimHeatmap(se, dims = 1:18, cells = 500, nfeatures = 16, balanced = TRUE, reduction = "harmony", ncol = 3);p1
+p2 <- DimHeatmap(se, dims = 19:36, cells = 500, nfeatures = 16, balanced = TRUE, reduction = "harmony", ncol = 3);p2
+p3 <- DimHeatmap(se, dims = 37:50, cells = 500, nfeatures = 16, balanced = TRUE, reduction = "harmony", ncol = 3);p3
+dev.off()
+``` 
+  
+  
+### UMAP  
+
+```{r dimred_umap_plot, fig.width=10, fig.height=8.5}
+pt_size <- 0.5
+p1 <- DimPlot(object = se, dims = c(1,2), reduction = "umap", group.by = "subject_alias", pt.size = pt_size, cols = colors_multi) + NoAxes() #+ DarkTheme()
+p2 <- DimPlot(object = se, dims = c(1,2), reduction = "umap", group.by = "condition", pt.size = pt_size, cols = colors_multi) + NoAxes() #+ DarkTheme()
+p3 <- FeaturePlot(object = se, dims = c(1,2), reduction = "umap", features = "nCount_RNA", pt.size = pt_size, cols = c("grey90", "red"), max.cutoff = 5000) + NoAxes()
+p4 <- FeaturePlot(object = se, dims = c(1,2), reduction = "umap", features = "nFeature_RNA", pt.size = pt_size, cols = c("grey90", "red")) + NoAxes()
+p <- (p1-p2)/(p3-p4);p
+```
+
+```{r dimred_umap_plot_genes, fig.width=10, fig.height=8.5}
+pt_size <- 0.25
+plot_gene_umap <- function(se, gene, pt_size = 0.1){
+  p <- FeaturePlot(object = se, features = gene, 
+                   reduction = "umap", pt.size = pt_size, 
+                   slot = "scale.data", min.cutoff = 0,
+                   cols = c("grey90", "red")) + NoAxes()
+  return(p)
+}
+
+plot_grid(plot_gene_umap(se, "SAA1"),
+          plot_gene_umap(se, "PLIN4"),
+          plot_gene_umap(se, "ADIPOQ"),
+          plot_gene_umap(se, "THRSP"),
+          plot_gene_umap(se, "LEP"),
+          plot_gene_umap(se, "SORBS1"),
+          plot_gene_umap(se, "IGKC"),
+          plot_gene_umap(se, "TPSB2"),
+          plot_gene_umap(se, "NKG7"),
+          ncol = 3)
+```
+  
+  
+```{r dimred_umap_ica_plot, fig.width=16, fig.height=5}
+pt_size <- 0.25
+p1 <- DimPlot(object = se, dims = c(1,2), reduction = "umapICA", group.by = "subject_alias", pt.size = pt_size, cols = colors_multi) + NoAxes()
+p2 <- DimPlot(object = se, dims = c(1,2), reduction = "umapICA", group.by = "condition", pt.size = pt_size, cols = colors_multi) + NoAxes()
+p3 <- DimPlot(object = se, dims = c(1,2), reduction = "umapICA", group.by = "insulin_stim", pt.size = pt_size, cols = colors_insulin) + NoAxes()
+
+p <- (p1+p2+p3);p
+
+fname <- paste0(ANALYSIS_ID, ".dimred_umap_ica")
+pdf(file = file.path(DIR_FIG, paste0(fname, ".pdf")), width = 16, height = 5);p;dev.off()
+tiff(filename = file.path(DIR_FIG, paste0(fname, ".tiff")), units = "cm", width = 16*2.5, height = 5*2.5, res = 600); p; dev.off()
+```
+
+<br><br>
+  
+  
+## Clustering  
+
+### Clustree
+```{r clustering_clustree, fig.width=12, fig.height=10}
+p <- clustree(se, prefix = "SCT_snn_res.", node_colour = "grey70");p
+
+fname <- paste0(ANALYSIS_ID, ".clustering_clustree")
+pdf(file = file.path(DIR_FIG, paste0(fname, ".pdf")), width = 12, height = 10);p;dev.off()
+```
+  
+  
+### Annotations
+
+```{r clustering_annotationlegend, fig.width=10, fig.height=2}
+p <- ggplot(c_anno, aes(seurat_clusters, 0, color = cluster_anno)) +
+  geom_point(size=3) +
+  scale_colour_manual(values = c_anno$cluster_color) +
+  scale_x_continuous(n.breaks = 20) +
+  scale_y_continuous(n.breaks = 2) +
+  theme_classic() +
+  theme(legend.position = 'top', 
+        axis.title.y = element_blank(), axis.ticks.y = element_blank(), axis.text.y = element_blank(), axis.line.y = element_blank());p
+
+fname <- paste0(ANALYSIS_ID, ".clustering_annotationlegend")
+pdf(file = file.path(DIR_FIG, paste0(fname, ".pdf")), width = 10, height = 2);p;dev.off()
+```
+  
+```{r clustering_annotation_add}
+cluster_prop <- merge(cluster_prop, c_anno, by="seurat_clusters")
+se_markers <- merge(x = se_markers, y = c_anno, by.x="cluster", by.y="seurat_clusters")
+```
+
+  
+### UMAP  
+
+```{r clustering_setres_plot, fig.width=6, fig.height=4}
+dims_test <- paste0("SCT_snn_res.", c(0.8, 0.9, 1, 1.2, 1.6, 2))
+DimPlot(object = se, dims = c(1,2), reduction = "umap", group.by = dims_test, 
+        pt.size = 0.5,
+        label = T, label.size = 5, ncol = 3) & NoLegend()
+```
+
+
+```{r clustering_umap, fig.width=6, fig.height=5}
+p <- DimPlot(object = se, 
+             reduction = "umap", dims = c(1,2), 
+             group.by = "seurat_clusters",
+             cols = c_anno[order(as.numeric(c_anno$seurat_clusters)),]$cluster_color,
+             label = T, 
+             label.size = 8, 
+             repel = F) + 
+  NoAxes(); p
+
+p2 <- DimPlot(object = se, 
+             reduction = "umap", dims = c(1,2), 
+             group.by = "seurat_clusters",
+             cols = c_anno[order(as.numeric(c_anno$seurat_clusters)),]$cluster_color,
+             label = F) + 
+  NoAxes();
+
+fname <- paste0(ANALYSIS_ID, ".clustering_umap")
+pdf(file = file.path(DIR_FIG, paste0(fname, ".pdf")), width = 6, height = 5);p;dev.off()
+tiff(filename = file.path(DIR_FIG, paste0(fname, ".tiff")), units = "cm", width = 6*2.5, height = 5*2.5, res = 600); p; dev.off()
+
+fname <- paste0(ANALYSIS_ID, ".clustering_umap_b")
+pdf(file = file.path(DIR_FIG, paste0(fname, ".pdf")), width = 6, height = 5);p2;dev.off()
+tiff(filename = file.path(DIR_FIG, paste0(fname, ".tiff")), units = "cm", width = 6*2.5, height = 5*2.5, res = 600); p2; dev.off()
+```
+  
+  
+### Spot proportions  
+  
+```{r clustering_countspots_plot, fig.width=14, fig.height=6}
+d_plot <- cluster_prop
+
+p1 <- ggplot(d_plot, aes(x = as.factor(insulin_stim), y = n, fill = as.factor(seurat_clusters))) + 
+  geom_bar(stat = 'identity', colour=NA, position = "stack") +
+  scale_fill_manual(values = c_anno[order(c_anno$seurat_clusters), "cluster_color"]) +
+  facet_wrap(~as.factor(subject), nrow = 1) +
+  labs(x="", y="# Spots", fill="") +
+  theme_minimal() +
+  theme(legend.position = "top", legend.text = element_text(size=6));p1
+
+p2 <- ggplot(d_plot, aes(x = as.factor(seurat_clusters), y = n, fill = subject)) + 
+  geom_bar(stat = 'identity', colour="white", position = "stack") +
+  scale_fill_manual(values = colors_multi) +
+  scale_y_log10() +
+  labs(x="", y="# Spots (log10)", fill="") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1),
+        legend.position = "top")
+
+p3 <- ggplot(d_plot, aes(x = as.factor(seurat_clusters), y = n, fill = subject)) +
+  geom_bar(stat = 'identity', colour="white", position = "fill") +
+  scale_fill_manual(values = colors_multi) +
+  labs(x="", y="Spot proportions", fill="") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1),
+        legend.position = "top")
+
+p <- plot_grid(p1, p2, p3, nrow = 1, rel_heights = c(0.55, 0.45));p
+
+fname <- paste0(ANALYSIS_ID, ".clustering_countspots")
+pdf(file = file.path(DIR_FIG, paste0(fname, ".pdf")), width = 14, height = 6);p;dev.off()
+tiff(filename = file.path(DIR_FIG, paste0(fname, ".tiff")), units = "cm", width = 14*2.5, height = 6*2.5, res = 600); p; dev.off()
+```
+
+
+```{r clustering_countspots_bmi_plot, fig.width=6, fig.height=2.5}
+d_plot <- subset(cluster_prop, cluster_group %in% "Adipocyte")
+p <- ggplot(d_plot, aes(x=as.numeric(bmi), y=cluster_pct_subject)) +
+  # geom_line(color = "grey80") +
+  geom_point(size=2, aes(color=bmi)) +
+  scale_color_gradient(low = colors_main[1], high = colors_main[2]) +
+  scale_y_continuous(limits = c(0,15)) +
+  facet_grid(~cluster_anno) +
+  labs(y="Cluster proportion (%)", x="BMI") +
+  theme_classic() +
+  theme(legend.position = "none", strip.background = element_blank(), strip.text = element_text(face = "bold")); p
+
+fname <- paste0(ANALYSIS_ID, ".clustering_countspots_corr-bmi")
+pdf(file = file.path(DIR_FIG, paste0(fname, ".pdf")), width = 6, height = 2.5);p;dev.off()
+tiff(filename = file.path(DIR_FIG, paste0(fname, ".tiff")), units = "cm", width = 6*2.5, height = 2.5*2.5, res = 600); p; dev.off()
+```
+  
+  
+```{r clustering_countspots_mval_plot, fig.width=14, fig.height=7}
+d_plot <- cluster_prop
+p1.1 <- ggplot(subset(d_plot, cluster_group %in% c("Adipocyte")), aes(x=as.numeric(m_value), y=cluster_pct_subject)) +
+  geom_hline(yintercept = 0, linetype="solid", color = "grey50") +
+  geom_line(color = "grey80") +
+  geom_point(size=2, aes(color=as.factor(m_value))) +
+  scale_color_manual(values = colors_mval) +
+  facet_grid(insulin_stim ~ cluster_anno) +
+  labs(y="Cluster proportion (%)", x="m-value") +
+  theme_classic() +
+  theme(legend.position = "none");p1.1
+
+p1.2 <- ggplot(subset(d_plot, cluster_group %!in% c("Adipocyte", "Unknown", "Unspecific", "Immune")), aes(x=as.numeric(m_value), y=cluster_pct_subject)) +
+  geom_hline(yintercept = 0, linetype="solid", color = "grey50") +
+  geom_line(color = "grey80") +
+  geom_point(size=2, aes(color=as.factor(m_value))) +
+  scale_color_manual(values = colors_mval) +
+  facet_grid(insulin_stim ~ cluster_anno) +
+  labs(y="Cluster proportion (%)", x="m-value") +
+  theme_classic() +
+  theme(legend.position = "none");
+
+p2 <- ggplot(subset(d_plot, cluster_group %in% c("Immune")), aes(x=as.numeric(m_value), y=cluster_pct_subject)) +
+  geom_hline(yintercept = 0, linetype="solid", color = "grey50") +
+  geom_line(color = "grey80") +
+  geom_point(size=2, aes(color=as.factor(m_value))) +
+  scale_color_manual(values = colors_mval) +
+  facet_grid(insulin_stim ~ cluster_anno) +
+  labs(y="Cluster proportion (%)", x="m-value") +
+  theme_classic() +
+  theme(legend.position = "none");
+
+p <- (p1.1 + p1.2) / p2; p
+
+fname <- paste0(ANALYSIS_ID, ".clustering_countspots_corr-mval")
+pdf(file = file.path(DIR_FIG, paste0(fname, ".pdf")), width = 14, height = 7);p;dev.off()
+tiff(filename = file.path(DIR_FIG, paste0(fname, ".tiff")), units = "cm", width = 14*2.3, height = 7*2.2, res = 600); p; dev.off()
+```
+
+
+<br><br>  
+  
+  
+## Cluster marker genes  
+
+### Cluster DEA  
+  
+```{r markers_clusterdea_dotplot_a, fig.width=7, fig.height=12}
+top_dotp <- se_markers %>% group_by(cluster) %>% dplyr::top_n(n = 3, wt = avg_logFC) %>% dplyr::arrange(as.numeric(cluster))
+top_dotp_add <- se_markers %>% group_by(cluster) %>% dplyr::filter(gene %in% c("PLIN4", "SORBS1"))
+top_dotp <- rbind(top_dotp, top_dotp_add) %>% dplyr::arrange((cluster_anno))
+
+
+p1 <- DotPlot(se, features = rev(unique(top_dotp$gene)), 
+             col.min = -2, col.max = 2,
+             group.by = "cluster_anno",
+             scale = T,
+             cols = c("grey90", "red")) + rotate() +
+  scale_colour_gradient2(low = "#441153", mid = "grey90", high = "#3CB67B") +
+  theme(axis.title.x = element_blank(),
+        axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5),
+        axis.title.y = element_blank()); p1
+
+fname <- paste0(ANALYSIS_ID, ".markers_clusterdea_dotplot_a")
+pdf(file = file.path(DIR_FIG, paste0(fname, ".pdf")), width = 7, height = 12); p1;dev.off()
+tiff(filename = file.path(DIR_FIG, paste0(fname, ".tiff")), units = "cm", width = 7*2.5, height = 12*2.5, res = 600); p1; dev.off()
+ggsave(filename = file.path(DIR_FIG, paste0(fname, ".eps")), plot = p1, width = 7, height = 12)
+```
+
+```{r markers_clusterdea_dotplot_b, fig.width=14, fig.height=5.4}
+p2 <- DotPlot(se, features = rev(unique(top_dotp$gene)),
+             col.min = -2, col.max = 2,
+             group.by = "cluster_anno",
+             scale = T,
+             cols = c("grey90", "red")) +
+  scale_colour_gradient2(low = "#441153", mid = "grey90", high = "#3CB67B") +
+  theme(axis.title.x = element_blank(),
+    axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5),
+    axis.title.y = element_blank()); p2
+
+fname <- paste0(ANALYSIS_ID, ".markers_clusterdea_dotplot_b")
+pdf(file = file.path(DIR_FIG, paste0(fname, ".pdf")), width = 14, height = 5.4); p2;dev.off()
+tiff(filename = file.path(DIR_FIG, paste0(fname, ".tiff")), units = "cm", width = 14*2.5, height = 5.4*2.5, res = 600); p2; dev.off()
+ggsave(filename = file.path(DIR_FIG, paste0(fname, ".eps")), plot = p2, width = 14, height = 5.4)
+```
+
+
+```{r markers_clusterdea_heatmap}
+top_hm <- se_markers %>% group_by(cluster) %>% dplyr::top_n(n = 5, wt = avg_logFC) %>% dplyr::arrange(as.numeric(cluster))
+p <- DoHeatmap(se,
+               features = top_hm$gene, 
+               group.colors = c_anno[order(c_anno$seurat_clusters), "cluster_color"],
+               angle = 0, hjust = 0, size = 5,
+               disp.min = -2.5, disp.max = 2.5) +
+  scale_fill_gradientn(colours = rev(RColorBrewer::brewer.pal(5, "RdBu")));
+
+fname <- paste0(ANALYSIS_ID, ".markers_clusterdea_heatmap")
+pdf(file = file.path(DIR_FIG, paste0(fname, ".pdf")), width = 22, height = 16);p;dev.off()
+tiff(filename = file.path(DIR_FIG, paste0(fname, ".tiff")), units = "cm", width = 22*2.5, height = 16*2.5, res = 600); p; dev.off()
+```
+
+<br>
+
+### Pathway enrichment
+
+```{r markers_pea_GO}
+top_pw_dot <- 3
+top_pw_df_list <- list()
+top_pw_list <- c()
+for(c in 1:length(names(markers_seu_clusters))){
+  clus <- paste0("cluster_", (c+1))
+  if(!is.null(pw_results_go[[clus]])){
+    top_pws <- pw_results_go[[clus]][1:top_pw_dot,]$Description
+    top_pw_list <- c(top_pw_list, top_pws)
+    }
+}
+top_pw_list <- top_pw_list[!is.na(top_pw_list)]
+top_pw_list <- unique(top_pw_list)
+for(c in 1:length(names(markers_seu_clusters))){
+  clus <- paste0("cluster_", (c+1))
+  if(!is.null(pw_results_go[[clus]])){
+    pw_res <- pw_results_go[[clus]]@result
+    pw_res <- pw_res[pw_res$Description %in% top_pw_list, ]
+    df <- data.frame(Cluster = (c+1),
+                     Pathway = pw_res$Description,
+                     # Pathway_DB = "GO",
+                     GeneRatio = pw_res$GeneRatio,
+                     p.adjust = pw_res$p.adjust)
+    top_pw_df_list[[clus]] <- df
+    }
+  }
+pw_df <- do.call("rbind", top_pw_df_list)
+pw_df$cluster <- (as.numeric(pw_df$Cluster))
+df_gr <- data.frame(do.call(rbind, strsplit(as.character(pw_df$GeneRatio), split = "/")), stringsAsFactors = F)
+generatio <- round(as.numeric(df_gr$X1) / as.numeric(df_gr$X2), 2)
+pw_df2 <- merge(pw_df, c_anno, by.x = "Cluster", by.y="seurat_clusters")
+pw_df2$GeneRatio <- generatio
+pw_df2 <- pw_df2[order(pw_df2$cluster_anno), ]
+pw_df2 <- pw_df2 %>% group_by(cluster_anno) %>% dplyr::top_n(n = top_pw_dot, wt = GeneRatio) %>% dplyr::arrange(as.character(Pathway))
+```
+
+
+```{r markers_pea_GO_dotplot_a, fig.width=8, fig.height=7}
+p1 <- ggplot(pw_df2, aes(x=cluster_anno, y=Pathway, size=GeneRatio, color=-log10(p.adjust))) +
+  geom_point() +
+  scale_colour_gradient(low = "#c4e7d1", high = "#3CB67B", breaks=seq(0,20,4)) +
+  labs(x="", y="") +
+  theme_classic() +
+  theme(axis.title.x = element_blank(),
+      axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5),
+      axis.title.y = element_blank(),
+      axis.text.y = element_text(size=6), 
+      panel.grid = element_line(), 
+      panel.grid.major = element_line(colour = "grey95")); p1
+
+fname <- paste0(ANALYSIS_ID, ".baseline.markers_pea_GO_a")
+pdf(file = file.path(DIR_FIG, paste0(fname, ".pdf")), width = 8, height = 7);p1;dev.off()
+tiff(filename = file.path(DIR_FIG, paste0(fname, ".tiff")), units = "cm", width = 8*2.5, height = 7*2.5, res = 600); p1; dev.off()
+ggsave(filename = file.path(DIR_FIG, paste0(fname, ".eps")), plot = p1, width = 8, height = 7)
+
+```
+
+```{r markers_pea_GO_dotplot_b, fig.width=10, fig.height=6}
+p2 <- ggplot(pw_df2, aes(y=cluster_anno, x=Pathway, size=GeneRatio, color=-log10(p.adjust))) +
+  geom_point() +
+  scale_colour_gradient(low = "#c4e7d1", high = "#3CB67B", breaks=seq(0,20,4)) +
+  labs(x="", y="") +
+  theme_classic() +
+  theme(axis.title.x = element_blank(),
+      axis.text.y = element_text(angle = 0, hjust = 1, vjust = 0.5),
+      axis.title.y = element_blank(),
+      axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1, size=6), 
+      panel.grid = element_line(), 
+      panel.grid.major = element_line(colour = "grey95")); p2
+
+fname <- paste0(ANALYSIS_ID, ".baseline.markers_pea_GO_b")
+pdf(file = file.path(DIR_FIG, paste0(fname, ".pdf")), width = 10, height = 6);p2;dev.off()
+tiff(filename = file.path(DIR_FIG, paste0(fname, ".tiff")), units = "cm", width = 10*2.5, height = 6*2.5, res = 600); p2; dev.off()
+ggsave(filename = file.path(DIR_FIG, paste0(fname, ".eps")), plot = p2, width = 10, height = 6)
+```
+
+
+```{r markers_pea_RA}
+top_pw_dot <- 3
+top_pw_df_list <- list()
+top_pw_list <- c()
+for(c in 1:length(names(markers_seu_clusters))){
+  clus <- paste0("cluster_", (c+1))
+  if(!is.null(pw_results_ra[[clus]])){
+    top_pws <- pw_results_ra[[clus]][1:top_pw_dot,]$Description
+    top_pw_list <- c(top_pw_list, top_pws)
+    }
+}
+top_pw_list <- top_pw_list[!is.na(top_pw_list)]
+top_pw_list <- unique(top_pw_list)
+for(c in 1:length(names(markers_seu_clusters))){
+  clus <- paste0("cluster_", (c+1))
+  if(!is.null(pw_results_ra[[clus]])){
+    pw_res <- pw_results_ra[[clus]]@result
+    pw_res <- pw_res[pw_res$Description %in% top_pw_list, ]
+    df <- data.frame(Cluster = (c+1),
+                     Pathway = pw_res$Description,
+                     GeneRatio = pw_res$GeneRatio,
+                     p.adjust = pw_res$p.adjust)
+    top_pw_df_list[[clus]] <- df
+    }
+  }
+
+pw_df_ra <- do.call("rbind", top_pw_df_list)
+pw_df_ra$cluster <- (as.numeric(pw_df_ra$Cluster))
+df_gr <- data.frame(do.call(rbind, strsplit(as.character(pw_df_ra$GeneRatio), split = "/")), stringsAsFactors = F)
+generatio <- round(as.numeric(df_gr$X1) / as.numeric(df_gr$X2), 2)
+pw_df_ra2 <- merge(pw_df_ra, c_anno, by.x = "Cluster", by.y="seurat_clusters")
+pw_df_ra2$GeneRatio <- generatio
+pw_df_ra2 <- pw_df_ra2[order(pw_df_ra2$cluster_anno), ]
+pw_df_ra2 <- pw_df_ra2 %>% group_by(cluster_anno) %>% dplyr::top_n(n = top_pw_dot, wt = GeneRatio)
+```
+
+```{r markers_pea_RA_dotplot_a, fig.width=8, fig.height=7}
+p1 <- ggplot(pw_df_ra2, aes(x=cluster_anno, y=Pathway, size=GeneRatio, color=-log10(p.adjust))) +
+  geom_point() +
+  scale_colour_gradient(low = "#c4e7d1", high = "#3CB67B", breaks=seq(0,20,4)) +
+  labs(x="", y="") +
+  theme_classic() +
+  theme(axis.title.x = element_blank(),
+      axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5),
+      axis.title.y = element_blank(),
+      axis.text.y = element_text(size=6), 
+      panel.grid = element_line(), 
+      panel.grid.major = element_line(colour = "grey95")); p1
+
+fname <- paste0(ANALYSIS_ID, ".baseline.markers_pea_RA_a")
+pdf(file = file.path(DIR_FIG, paste0(fname, ".pdf")), width = 8, height = 7);p1;dev.off()
+tiff(filename = file.path(DIR_FIG, paste0(fname, ".tiff")), units = "cm", width = 8*2.5, height = 7*2.5, res = 600); p1; dev.off()
+ggsave(filename = file.path(DIR_FIG, paste0(fname, ".eps")), plot = p1, width = 8, height = 7)
+```
+
+```{r markers_pea_RA_dotplot_b, fig.width=8, fig.height=6}
+p2 <- ggplot(pw_df_ra2, aes(y=cluster_anno, x=Pathway, size=GeneRatio, color=-log10(p.adjust))) +
+  geom_point() +
+  scale_colour_gradient(low = "#c4e7d1", high = "#3CB67B", breaks=seq(0,20,4)) +
+  labs(x="", y="") +
+  theme_classic() +
+  theme(axis.title.x = element_blank(),
+      axis.text.y = element_text(angle = 0, hjust = 1, vjust = 0.5),
+      axis.title.y = element_blank(),
+      axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1, size=6), 
+      panel.grid = element_line(), 
+      panel.grid.major = element_line(colour = "grey95")); p2
+
+fname <- paste0(ANALYSIS_ID, ".baseline.markers_pea_RA_b")
+pdf(file = file.path(DIR_FIG, paste0(fname, ".pdf")), width = 10, height = 6);p2;dev.off()
+tiff(filename = file.path(DIR_FIG, paste0(fname, ".tiff")), units = "cm", width = 10*2.5, height = 6*2.5, res = 600); p2; dev.off()
+ggsave(filename = file.path(DIR_FIG, paste0(fname, ".eps")), plot = p2, width = 10, height = 6)
+```
+
+<br><br>
+
+## Other
+
+### LEP and ADIPOQ expression in subjects 
+
+#### All spots  
+
+```{r other_geneexpr_LEP_ADIPOQ, fig.width=6, fig.height=3.5}
+d_plot <- se[[]]
+d_plot$LEP <- GetAssayData(se, slot = "scale.data", assay = "SCT")["LEP", ]
+d_plot$ADIPOQ <- GetAssayData(se, slot = "scale.data", assay = "SCT")["ADIPOQ", ]
+
+p1 <- ggplot(d_plot, aes(x=factor(bmi), y=LEP, fill = gender)) +
+  geom_hline(yintercept = 0, color = "grey70") +
+  geom_violin(color=NA) +
+  geom_boxplot(width=0.1, outlier.size = 0.2) +
+  scale_fill_manual(values = colors_multi[c(2,6)]) +
+  labs(title="LEP", x="BMI", y="Norm. scaled expression") +
+  theme_classic() +
+  theme(plot.title = element_text(hjust=0.5, face = "bold"), legend.position = "bottom", legend.title = element_blank())
+
+p2 <- ggplot(d_plot, aes(x=factor(bmi), y=ADIPOQ, fill = gender)) +
+  geom_hline(yintercept = 0, color = "grey70") +
+  geom_violin(color=NA) +
+  geom_boxplot(width=0.1, outlier.size = 0.2) +
+  scale_fill_manual(values = colors_multi[c(2,6)]) +
+  labs(title="ADIPOQ", x="BMI", y="Norm. scaled expression") +
+  theme_classic() +
+  theme(plot.title = element_text(hjust=0.5, face = "bold"), legend.position = "bottom", legend.title = element_blank())
+
+p <- p1-p2;p
+
+fname <- paste0(ANALYSIS_ID, ".other_geneexpr_LEP_ADIPOQ")
+pdf(file = file.path(DIR_FIG, paste0(fname, ".pdf")), width = 8, height = 3.5);p;dev.off()
+tiff(file = file.path(DIR_FIG, paste0(fname, ".tiff")), units = "cm", width = 8*2.5, height = 3.5*2.5, res=600);p;dev.off()
+```
+  
+  
+#### Adipocyte spots  
+
+```{r other_geneexpr_LEP_ADIPOQ_adipocytes, fig.width=12, fig.height=3.5}
+d_plot <- subset(se[[]], cluster_group == "Adipocyte")
+d_plot$LEP <- GetAssayData(se[,rownames(d_plot)], slot = "scale.data", assay = "SCT")["LEP", ]
+d_plot$ADIPOQ <- GetAssayData(se[,rownames(d_plot)], slot = "scale.data", assay = "SCT")["ADIPOQ", ]
+
+p1 <- ggplot(d_plot, aes(x=factor(bmi), y=LEP, fill = gender)) +
+  geom_hline(yintercept = 0, color = "grey70") +
+  geom_violin(color=NA) +
+  geom_boxplot(width=0.2, outlier.size = 0.2) +
+  scale_fill_manual(values = colors_multi[c(2,6)]) +
+  facet_wrap(~cluster_anno) +
+  labs(title="LEP", x="BMI", y="Norm. scaled expression") +
+  theme_classic() +
+  theme(plot.title = element_text(hjust=0.5, face = "bold"), legend.position = "bottom", legend.title = element_blank(),
+        axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1),
+        strip.background = element_blank(), strip.text = element_text(face = "bold"))
+
+p2 <- ggplot(d_plot, aes(x=factor(bmi), y=ADIPOQ, fill = gender)) +
+  geom_hline(yintercept = 0, color = "grey70") +
+  geom_violin(color=NA) +
+  geom_boxplot(width=0.2, outlier.size = 0.2) +
+  scale_fill_manual(values = colors_multi[c(2,6)]) +
+  facet_wrap(~cluster_anno) +
+  labs(title="ADIPOQ", x="BMI", y="Norm. scaled expression") +
+  theme_classic() +
+  theme(plot.title = element_text(hjust=0.5, face = "bold"), legend.position = "bottom", legend.title = element_blank(),
+        axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1),
+        strip.background = element_blank(), strip.text = element_text(face = "bold"))
+
+p <- p1-p2;p
+
+fname <- paste0(ANALYSIS_ID, ".other_geneexpr_LEP_ADIPOQ_adipocytes")
+pdf(file = file.path(DIR_FIG, paste0(fname, ".pdf")), width = 12, height = 3.5);p;dev.off()
+tiff(file = file.path(DIR_FIG, paste0(fname, ".tiff")), units = "cm", width = 12*2.5, height = 3.5*2.5, res=600);p;dev.off()
+```
+    
+    
+    
+### Insulin response
+
+#### Insulin signature  
+
+```{r other_insulinsign_bar, fig.width=6, fig.height=4}
+p <- ggplot(subset(df_ins_prop, insulin_cat == "high"), aes(x = subject_alias, y = pct, fill = as.factor(insulin_stim) )) +
+  geom_bar(position="dodge", stat="identity", width=0.7) + 
+  scale_fill_manual(values = colors_insulin) +
+  labs(x="", fill="", y = "Proportion of total spots (%)", title="Spots with high insulin signature score") +
+  theme_minimal() +
+  geom_hline(yintercept = 0, color = "grey50") +
+  theme(axis.text.y = element_text(size=14),
+        axis.title.y = element_text(size=16),
+        axis.text.x = element_text(size=14),
+        legend.position = "top", 
+        plot.title = element_text(hjust=0.5, face = "bold", size=14),
+        panel.spacing = unit(2, "lines"),
+        panel.grid.major.x = element_blank(),
+        panel.grid.minor = element_blank()); p
+
+
+fname <- paste0(ANALYSIS_ID, ".other_insulinsign_bar")
+pdf(file = file.path(DIR_FIG, paste0(fname, ".pdf")), width = 6, height = 4);p;dev.off()
+tiff(filename = file.path(DIR_FIG, paste0(fname, ".tiff")), units = "cm", width = 6*2.5, height = 4*2.5, res = 600); p; dev.off()
+```
+
+<br><br>
+
+***  
+
+# Wrap up
+
+## Save object
+
+```{r save_rds, fig.width=10, fig.height=6}
+fname <- paste0("se-object.", ANALYSIS_ID, ".rds")
+saveRDS(object = se, file = file.path(DIR_RES, fname))
+```
+
+<br><br>
+
+## Session information  
+  
+This analysis was last compiled on `r Sys.Date()`.  
+  
+<br>
+  
+```{r sessioninfo}
+sessionInfo()
+```
+
+
+
+
+
+
