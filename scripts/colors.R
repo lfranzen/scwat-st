@@ -20,15 +20,28 @@ colors_multi <- c("#a5d7e5",
                   "#fb7272",
                   "grey50")
 colors_insulin <- c("#badce6", "#54a2b8")
-colors_mval <- c("5.71" = brewer.pal(5, "YlGn")[2],
-                 "7" = brewer.pal(5, "YlGn")[3],
-                 "9.29" = brewer.pal(5, "YlGn")[4],
-                 "12.4" = brewer.pal(5, "YlGn")[5]) 
+colors_mval <- c("5.71" = "#a6dbbb",  #brewer.pal(5, "YlGn")[2]
+                 "7" = "#3cb67b",
+                 "9.29" = "#359566",
+                 "12.4" = "#2e7651")
+colors_adi <- c("Adipocyte 1" = "#BFABC3",
+                "Adipocyte 2" = "#907198",
+                "Adipocyte 3" = "#62376E")
 
+color_low <- "#441153"
+color_high <- "#3CB67B"
+colors_ramp <- colorRampPalette(colors = c(color_low, color_high))
 
 # color_func_blue <- colorRampPalette(colors = c("#ccebf0", "#3083a7"))  # "#3097a7"
-color_func_blue <- colorRampPalette(colors = c("#C6DBEF", "#075a84"))  # "#3097a7"
-color_func_orange <- colorRampPalette(colors = c("#ffe2b4", "#e58f01"))
-color_func_pink <- colorRampPalette(colors = c("#edbbcb", "#ca436c"))
-color_func_green <- colorRampPalette(colors = c("#daefcb", "#639343"))  # "#77c544"
-color_func_purp <- colorRampPalette(colors = c("#ecd9f1", "#967bce"))
+# color_func_blue <- colorRampPalette(colors = c("#C6DBEF", "#075a84"))  # "#3097a7"
+# color_func_orange <- colorRampPalette(colors = c("#ffe2b4", "#e58f01"))
+# color_func_pink <- colorRampPalette(colors = c("#edbbcb", "#ca436c"))
+# color_func_green <- colorRampPalette(colors = c("#daefcb", "#639343"))  # "#77c544"
+# color_func_purp <- colorRampPalette(colors = c("#ecd9f1", "#967bce"))
+
+#' Update 'viridis' colors
+color_func_blue <- colorRampPalette(colors = c("#C6DBEF", "#075a84"))
+color_func_orange <- colorRampPalette(colors = c("#F3E55C", "#E8602D"))
+color_func_pink <- colorRampPalette(colors = c("#bfabc3", "#62376e"))
+color_func_green <- colorRampPalette(colors = c("#a6dbbb", "#359566"))
+color_func_purp <- colorRampPalette(colors = c("#edbbcb", "#c480a3"))
