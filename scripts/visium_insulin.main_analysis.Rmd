@@ -326,7 +326,10 @@ se <- FindNeighbors(object = se, verbose = T, reduction = red_use, dims = dims_u
 
 for (res in c(0, 0.2, seq(0.4, 1, 0.1), 1.2, 1.6, 2) ){
   print(res)
-  se <- FindClusters(object = se, verbose = T, algorithm = 1, resolution = res)
+  se <- FindClusters(object = se,
+                     algorithm = 1,
+                     resolution = res, 
+                     verbose = T)
 }
 ```
 
@@ -891,7 +894,7 @@ p1 <- ggplot(d_plot, aes(x = as.factor(insulin_stim), y = n, fill = as.factor(se
   facet_wrap(~as.factor(subject), nrow = 1) +
   labs(x="", y="# Spots", fill="") +
   theme_minimal() +
-  theme(legend.position = "top", legend.text = element_text(size=6));p1
+  theme(legend.position = "top", legend.text = element_text(size=6))
 
 p2 <- ggplot(d_plot, aes(x = as.factor(seurat_clusters), y = n, fill = subject)) + 
   geom_bar(stat = 'identity', colour="white", position = "stack") +
@@ -946,7 +949,7 @@ p1.1 <- ggplot(subset(d_plot, cluster_group %in% c("Adipocyte")), aes(x=as.numer
   facet_grid(insulin_stim ~ cluster_anno) +
   labs(y="Cluster proportion (%)", x="m-value") +
   theme_classic() +
-  theme(legend.position = "none");p1.1
+  theme(legend.position = "none");
 
 p1.2 <- ggplot(subset(d_plot, cluster_group %!in% c("Adipocyte", "Unknown", "Unspecific", "Immune")), aes(x=as.numeric(m_value), y=cluster_pct_subject)) +
   geom_hline(yintercept = 0, linetype="solid", color = "grey50") +
@@ -1321,9 +1324,4 @@ This analysis was last compiled on `r Sys.Date()`.
 ```{r sessioninfo}
 sessionInfo()
 ```
-
-
-
-
-
 
