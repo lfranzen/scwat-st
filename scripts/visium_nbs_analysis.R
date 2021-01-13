@@ -1,4 +1,4 @@
-#' Cluster neighbourhoo analysis
+#' Cluster neighbourhood analysis
 #' Idnetify cluster neighbours and plot as graph 
 
 library(ggplot2)
@@ -42,8 +42,8 @@ se_ins <- LoadImages(se_ins, time.resolve = T, verbose = T, xdim = 100)
 # ===================================
 #' RUN NBS ANALYSIS
 
-# ANALYSIS <- "baseline"
-ANALYSIS <- "insulin"
+ANALYSIS <- "baseline"
+# ANALYSIS <- "insulin"
 
 
 if(ANALYSIS=="baseline"){
@@ -67,13 +67,13 @@ for(c in c_include){
 
 #' Create df with nbs info
 nbs_df <- se[[]][, c("seurat_clusters", grep(pattern = "nbs", colnames(se[[]]), value = T))]
-write.table(nbs_df, file.path(DIR_RES, "tables", paste0("nbs_data.", ANALYSIS, ".tsv")), quote = F, sep = "\t", row.names = T)
+# write.table(nbs_df, file.path(DIR_RES, "tables", paste0("nbs_data.", ANALYSIS, ".tsv")), quote = F, sep = "\t", row.names = T)
 
 # nbs_df <- read.table(file = file.path(DIR_RES, "tables", paste0("nbs_data.", ANALYSIS, ".tsv")), header = T, sep = "\t")
 
 
 c_count <- nbs_df %>%
-  group_by(seurat_clusters) %>%
+  dplyr::group_by(seurat_clusters) %>%
   dplyr::count()
 colnames(c_count) <- c("cluster", "n")
 c_count$id <- paste0("C", c_count$cluster)
@@ -117,9 +117,12 @@ for (i in seq(1:dim(nbs_adjmat_norm)[1])) {
 rownames(nbs_adjmat) <- rownames(nbs_adjmat_norm) <- paste0("C", c_include)
 colnames(nbs_adjmat) <- colnames(nbs_adjmat_norm) <- paste0("C", c_include)
 
-write.table(nbs_adjmat, file.path(DIR_RES, "tables", paste0("nbs_adj_matrix.", ANALYSIS, ".tsv")), quote = F, sep = "\t", row.names = T, col.names = T)
-write.table(nbs_adjmat_norm, file.path(DIR_RES, "tables", paste0("nbs_adj_matrix_norm.", ANALYSIS, ".tsv")), quote = F, sep = "\t", row.names = T, col.names = T)
+# write.table(nbs_adjmat, file.path(DIR_RES, "tables", paste0("nbs_adj_matrix.", ANALYSIS, ".tsv")), quote = F, sep = "\t", row.names = T, col.names = T)
+# write.table(nbs_adjmat_norm, file.path(DIR_RES, "tables", paste0("nbs_adj_matrix_norm.", ANALYSIS, ".tsv")), quote = F, sep = "\t", row.names = T, col.names = T)
 
+
+# ===================================
+#' PLOT 1
 #' Make graph
 nbs_adjmat_df <- nbs_adjmat_norm
 g <- graph.adjacency(nbs_adjmat_df, mode = "undirected", weighted = TRUE, diag = F)
@@ -141,9 +144,7 @@ g2 <- graph_from_data_frame(d = links, vertices = df, directed = F)
 g2 <- set_edge_attr(g2, "weight", value=E(g)$weight)
 E(g2)$width <- E(g2)$weight*1.5
 
-
-# ===================================
-#' PLOT 
+#' plot 1.1
 fname <- paste0("nbs_analysis.graph.", ANALYSIS)
 pdf(file = file.path(DIR_FIG, paste0(fname, ".pdf")), width = 5.5, height = 5.5)
 plot(g2, 
@@ -174,6 +175,103 @@ for(cluster_plot in names(e_sum)){
 }
 dev.off()
 
+#' plot 1.2
+fname <- paste0("nbs_analysis.graph2.", ANALYSIS)
+pdf(file = file.path(DIR_FIG, paste0(fname, ".pdf")), width = 5.5, height = 5.5)
+for(cluster_plot in names(e_sum)){
+  e_pairs <- c()
+  for(c in names(e_sum)[!names(e_sum)==cluster_plot]){
+    e_pairs <- c(e_pairs, cluster_plot, c)
+  }
+  ecol <- rep(NA, ecount(g2))
+  ecol[get.edge.ids(g, vp = e_pairs)] <- "gray50"
+  
+  node_ids <- names(V(g3))
+  node_sizes <- data.frame(node = node_ids,
+                           size = V(g3)$norm_size, 
+                           stringsAsFactors = F)
+  LS <- layout_as_star(g3, center = cluster_plot, order = order(node_sizes$size, decreasing = T))
+  
+  plot(g2, 
+       layout=LS,
+       vertex.label.family = "Helvetica", vertex.label.color = "black", vertex.label.cex = 1.5,
+       vertex.size = V(g2)$norm_size,
+       vertex.color = adjustcolor(V(g2)$color, alpha.f=.9),
+       vertex.frame.color="white",
+       edge.color = adjustcolor(ecol, alpha.f = .5),
+       edge.curved=0)
+}
+dev.off()
 
+
+#' plot 1.3
+fname <- paste0("nbs_analysis.graph3.", ANALYSIS)
+pdf(file = file.path(DIR_FIG, paste0(fname, ".pdf")), width = 5.5, height = 5.5)
+g3 <- g2
+for(cluster_plot in names(e_sum)){
+  e_pairs <- c()
+  for(c in names(e_sum)[!names(e_sum)==cluster_plot]){
+    e_pairs <- c(e_pairs, cluster_plot, c)
+  }
+  ecol <- rep(NA, ecount(g3))
+  ecol[get.edge.ids(g, vp = e_pairs)] <- "gray50"
+  
+  node_ids <- names(V(g3))
+  node_widths <- E(g3)$weight[get.edge.ids(g3, vp = e_pairs)]
+  node_sizes <- data.frame(node = node_ids,
+                           size = V(g3)$norm_size,
+                           stringsAsFactors = F)
+  node_sizes$width <- 0
+  node_sizes[node_sizes$node!=cluster_plot, "width"] <- node_widths
+  LS <- layout_as_star(g3, center = cluster_plot, order = order(node_sizes$width, decreasing = T))
+  
+  x <- E(g3)$weight[get.edge.ids(g3, vp = e_pairs)]
+  norm_x = (x-min(x))/(max(x)-min(x))
+  norm_x <- (norm_x+.1)*20
+  E(g3)$width[get.edge.ids(g3, vp = e_pairs)] <- norm_x
+  
+  plot(g3, 
+       layout=LS,
+       vertex.label.family = "Helvetica", vertex.label.color = "black", vertex.label.cex = 1.5,
+       vertex.size = V(g3)$norm_size,
+       vertex.color = adjustcolor(V(g3)$color, alpha.f=.9),
+       vertex.frame.color="white",
+       edge.color = adjustcolor(ecol, alpha.f = .5),
+       edge.curved=0)
+}
+dev.off()
+
+
+
+#' PLOT 2
+g3 <- g2
+E(g3)$width <- E(g2)$weight*4
+
+for(cluster_plot in c("C3", "C4", "C6")){
+  e_pairs <- c()
+  for(c in names(e_sum)[!names(e_sum)==cluster_plot]){
+    e_pairs <- c(e_pairs, cluster_plot, c)
+  }
+  ecol <- rep(NA, ecount(g3))
+  ecol[get.edge.ids(g, vp = e_pairs)] <- "gray50"
+  
+  node_ids <- names(V(g3))
+  node_sizes <- data.frame(node = node_ids,
+                           size = V(g3)$norm_size, 
+                           stringsAsFactors = F)
+  LS <- layout_as_star(g3, center = cluster_plot, order = order(node_sizes$size, decreasing = T))
+
+  fname <- paste0("nbs_analysis.graph_adipocytes_", cluster_plot, ".", ANALYSIS)
+  cairo_ps(filename = file.path(DIR_FIG, paste0(fname, ".eps")), width = 5.5, height = 5.5)
+  plot(g3, 
+       layout=LS,
+       vertex.label.family = "Helvetica", vertex.label.color = "black", vertex.label.cex = 1.5,
+       vertex.size = V(g3)$norm_size*1.25,
+       vertex.color = adjustcolor(V(g3)$color, alpha.f=1),
+       vertex.frame.color="white",
+       edge.color = adjustcolor(ecol, alpha.f = .5),
+       edge.curved=0)
+  dev.off()
+}
 
 
