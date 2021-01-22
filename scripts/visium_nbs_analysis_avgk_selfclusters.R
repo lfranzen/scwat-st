@@ -128,43 +128,6 @@ write.csv(k_avg_out, file = file.path(DIR_OUT, "nbs_cluster_kavg.baseline.csv"),
 #####
 #' Randomise spot cluster locations - permute multiple times to obtain avg k for random state
 
-#' Testing
-# se.object <- se
-# shuffled_rows <- sample(x = nrow(se.object@meta.data))
-# shuffled_clusters <- as.character(se.object@meta.data[shuffled_rows, "seurat_clusters"])
-# se.object <- AddMetaData(se.object, shuffled_clusters, col.name = "clusters_perm")
-# 
-# se_metadata <- se.object@meta.data
-# se_metadata_perm <- se_metadata %>% dplyr::group_by(seu_n) %>% dplyr::mutate(clusters_perm = seurat_clusters[sample(dplyr::row_number())])
-# se_metadata_perm <- as.data.frame(se_metadata_perm)
-
-# hist(as.numeric(subset(se_metadata_perm, seu_n==2)$clusters_perm))
-# hist(as.numeric(subset(se_metadata_perm, seu_n==2)$seurat_clusters))
-# hist(as.numeric(subset(se.object@meta.data, seu_n==2)$clusters_perm))
-# hist(as.numeric(se_metadata_perm$seurat_clusters))
-# hist(as.numeric(se.object@meta.data$clusters_perm2))
-
-# pdf(file.path(DIR_OUT, "../figures", paste0("nbs_cluster_k_permuted.baseline.pdf")), width = 12, height = 9)
-# for(cluster_view in c("1", "3", "4", "6", "8", "16", "20")){
-#   # cluster_view = "1"
-#   spatnet.subset <- subset(spatnet, cluster_from %in% cluster_view)
-#   # spatnet.subset <- subset(spatnet.subset, sample == 1)
-#   spatnet.subset_conly <- subset(spatnet.subset, cluster_to %in% cluster_view)
-#   # spatnet.nbs <- spatnet[spatnet.subset$to, ]
-#   
-#   p <- ggplot() +
-#     geom_point(data = spatnet.subset, aes(start_x, -start_y, color = cluster_from), size = .5) +
-#     geom_segment(data = spatnet.subset_conly, aes(x = start_x, xend = end_x, y = -start_y, yend = -end_y), size=0.3) +
-#     # geom_point(data = subset(spatnet.nbs, cluster_from %in% cluster_view & cluster_to %in% cluster_view), aes(start_x, start_y, color = cluster_from), size = 1) +
-#     labs(color="") +
-#     scale_color_manual(values = colors_clusters[colors_clusters$seurat_clusters==cluster_view,"cluster_color"]) +
-#     facet_wrap(~sample) +
-#     theme_classic();
-#   print(p)
-#   # png(file.path(DIR_OUT, "../figures", paste0("nbs_cluster_k_",cluster_view,".png")), width = 6000, height = 4500, res = 500);p;dev.off()
-# }
-# dev.off()
-
 RandomClusteringSpatNet <- function (
   se.object,
   column.cluster.id,
@@ -234,17 +197,16 @@ RandomClusteringSpatNet <- function (
     colnames(k_avg_df_add) <- paste0("kavg_cluster_", cluster_view)
     k_avg_df <- cbind(k_avg_df, k_avg_df_add)
   }
+  
   message("Done!")
   return(k_avg_df)
 }
 
 
 #' Run for multiple random seeds
-# se_spat_net <- GetSpatNet(se)
-# test_out <- RandomClusteringSpatNet(se, column.cluster.id = "seurat_clusters", column.sample.id = "sample_id", se.SpatNet = se_spat_net)
 se_spat_net <- GetSpatNet(se)
-avgk_df_perm_list <- list()
 n_perm <- 50
+avgk_df_perm_list <- list()
 for(i in seq(1,n_perm)){
   avgk_df_perm_list[[i]] <- RandomClusteringSpatNet(se, column.cluster.id = "seurat_clusters", column.sample.id = "sample_id", 
                                                     se.SpatNet = se_spat_net,
@@ -267,32 +229,96 @@ for(c in seq(1:n_cols)){
 
 #' Compare random averages with real results
 rownames(k_avg_out) <- k_avg_out$sample
-k_avg_perm_diff <- k_avg_out[rownames(k_avg_perm_diff), colnames(k_avg_perm_diff)] - avgk_df_perm_avg
+k_avg_perm_diff <- k_avg_out[rownames(avgk_df_perm_avg), colnames(avgk_df_perm_avg)] - avgk_df_perm_avg
+k_avg_perm_zscore <- (k_avg_out[rownames(avgk_df_perm_avg), colnames(avgk_df_perm_avg)] - avgk_df_perm_avg) / avgk_df_perm_sd
 
-write.csv(avgk_df_perm_avg, file = file.path(DIR_OUT, "nbs_cluster_kavg-perm_avg.baseline.csv"), row.names = F)
-write.csv(avgk_df_perm_sd, file = file.path(DIR_OUT, "nbs_cluster_kavg-perm_sd.baseline.csv"), row.names = F)
-write.csv(avgk_df_perm_me, file = file.path(DIR_OUT, "nbs_cluster_kavg-perm_me.baseline.csv"), row.names = F)
-write.csv(k_avg_perm_diff, file = file.path(DIR_OUT, "nbs_cluster_kavg-perm_diff_score.baseline.csv"), row.names = F)
+
+
+write.csv(avgk_df_perm_avg, file = file.path(DIR_OUT, "nbs_cluster_kavg-perm_avg.baseline.csv"), row.names = T)
+write.csv(avgk_df_perm_sd, file = file.path(DIR_OUT, "nbs_cluster_kavg-perm_sd.baseline.csv"), row.names = T)
+write.csv(avgk_df_perm_me, file = file.path(DIR_OUT, "nbs_cluster_kavg-perm_me.baseline.csv"), row.names = T)
+write.csv(k_avg_perm_diff, file = file.path(DIR_OUT, "nbs_cluster_kavg-perm_diff_score.baseline.csv"), row.names = T)
+write.csv(k_avg_perm_zscore, file = file.path(DIR_OUT, "nbs_cluster_kavg-perm_zscore.baseline.csv"), row.names = T)
 
 
 #' Plot summary stats
+#' kavg diff column
 summary_df_kavg_diff <- as.data.frame(t(do.call(cbind, lapply(k_avg_perm_diff, summary))))
-summary_df_kavg_diff$cluster <- rownames(summary_df_kavg_diff)
+summary_df_kavg_diff$cluster <- paste0("C", as.character(sub(pattern = "kavg_cluster_", "", rownames(summary_df_kavg_diff))))
 
 p1 <- ggplot(summary_df_kavg_diff, aes(x=reorder(cluster, Max.), y=Max.)) +
-  geom_col() +
+  geom_col(fill=color_low) +
   labs(x="") +
   coord_flip() +
-  theme_bw()
+  theme_classic()
 
 p2 <- ggplot(summary_df_kavg_diff, aes(x=reorder(cluster, Mean), y=Mean)) +
-  geom_col() +
+  geom_col(fill=color_low) +
   labs(x="") +
   coord_flip() +
-  theme_bw()
+  theme_classic()
 
-p <- p1+p2
-pdf(file.path(DIR_OUT, "../figures", paste0("nbs_cluster_kavg-perm_diff_stats.baseline.pdf")), width = 6, height = 4);p;dev.off()
+p <- p1 + p2 + plot_annotation(title = '<k> obs-exp difference') & theme(plot.title = element_text(hjust=0.5));p
+pdf(file.path(DIR_OUT, "../figures", paste0("nbs_cluster_kavg-perm_diff_stats.baseline.pdf")), width = 4, height = 3.5);p;dev.off()
+png(file.path(DIR_OUT, "../figures", paste0("nbs_cluster_kavg-perm_diff_stats.baseline.png")), width = 4*300, height = 3.5*300, res=300);p;dev.off()
+
+
+#' kavg diff box plot
+df_kavg_diff <- as.data.frame(t(k_avg_perm_diff))
+df_kavg_diff$cluster <- paste0("C", as.character(sub(pattern = "kavg_cluster_", "", rownames(df_kavg_diff))))
+df_kavg_diff_long <- reshape2::melt(df_kavg_diff, id.vars = c("cluster"))
+
+p3 <- ggplot(df_kavg_diff_long, aes(x=reorder(cluster, value), y=value)) +
+  geom_hline(yintercept = 0) +
+  geom_boxplot() +
+  geom_point(color=color_low2, size=.5) +
+  labs(x="", y="<k>", title="<k> obs-exp diff.") +
+  coord_flip() +
+  theme_classic();p3
+
+pdf(file.path(DIR_OUT, "../figures", paste0("nbs_cluster_kavg-perm_diff_boxplot.baseline.pdf")), width = 3, height = 3.5);p3;dev.off()
+png(file.path(DIR_OUT, "../figures", paste0("nbs_cluster_kavg-perm_diff_boxplot.baseline.png")), width = 3*300, height = 3.5*300, res=300);p3;dev.off()
+
+
+
+#' kavg zscore column plot
+summary_df_kavg_zscore <- as.data.frame(t(do.call(cbind, lapply(k_avg_perm_zscore, summary))))
+summary_df_kavg_zscore$cluster <- paste0("C", as.character(sub(pattern = "kavg_cluster_", "", rownames(summary_df_kavg_zscore))))
+
+p1 <- ggplot(summary_df_kavg_zscore, aes(x=reorder(cluster, Max.), y=Max.)) +
+  geom_col(fill=color_low) +
+  labs(x="") +
+  coord_flip() +
+  theme_classic();p1
+
+p2 <- ggplot(summary_df_kavg_zscore, aes(x=reorder(cluster, Mean), y=Mean)) +
+  geom_col(fill=color_low) +
+  labs(x="") +
+  coord_flip() +
+  theme_classic()
+
+p <- p1+p2 + plot_annotation(title = '<k> obs-exp z-score') & theme(plot.title = element_text(hjust=0.5));p
+pdf(file.path(DIR_OUT, "../figures", paste0("nbs_cluster_kavg-perm_zscore_stats.baseline.pdf")), width = 4, height = 3.5);p;dev.off()
+png(file.path(DIR_OUT, "../figures", paste0("nbs_cluster_kavg-perm_zscore_stats.baseline.png")), width = 4*300, height = 3.5*300, res=300);p;dev.off()
+
+
+
+#' kavg zscore box plot
+df_kavg_zscore <- as.data.frame(t(k_avg_perm_zscore))
+df_kavg_zscore$cluster <- paste0("C", as.character(sub(pattern = "kavg_cluster_", "", rownames(df_kavg_zscore))))
+df_kavg_zscore_long <- reshape2::melt(df_kavg_zscore, id.vars = c("cluster"))
+
+p1 <- ggplot(df_kavg_zscore_long, aes(x=reorder(cluster, value), y=value)) +
+  geom_hline(yintercept = 0) +
+  geom_boxplot() +
+  geom_point(color=color_low2, size=.5) +
+  labs(x="", y="z-score", title="<k> obs-exp diff.") +
+  coord_flip() +
+  theme_classic();p1
+
+
+pdf(file.path(DIR_OUT, "../figures", paste0("nbs_cluster_kavg-perm_zscore_boxplot.baseline.pdf")), width = 3, height = 3.5);p1;dev.off()
+png(file.path(DIR_OUT, "../figures", paste0("nbs_cluster_kavg-perm_zscore_boxplot.baseline.png")), width = 3*300, height = 3.5*300, res=300);p1;dev.off()
 
 
 #####
