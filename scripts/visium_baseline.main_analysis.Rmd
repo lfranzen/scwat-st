@@ -50,8 +50,6 @@ The main data processing/analysis steps include the following:
 
 # Initialize  
 
-set.seed(42)
-
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(
 	echo = TRUE,
@@ -1007,17 +1005,8 @@ p2 <- DotPlot(se, features = rev(unique(top_dotp$gene)),
              group.by = "cluster_anno",
              scale = T,
              cols = c("grey90", "red") ) +
-  # scale_colour_gradient2(low = "#7cb4d6", mid = "grey90", high = "#f0654f") +
-  # scale_colour_gradient2(low = colors_main[1], mid = "grey90", high = colors_main[2]) +
-  # scale_colour_gradient2(low = "#3F4788FF", mid = "grey90", high = "#DCE318FF") +
-  # scale_colour_gradient2(low = "#440154FF", mid = "grey90", high = "#FDE725FF") +
   scale_colour_gradient2(low = "#441153", mid = "grey90", high = "#3CB67B") +
-  # scale_colour_gradientn(colours = colorRampPalette(rev(brewer.pal(11, "PuOr")))(12)[2:11]) +
-  # scale_colour_gradient2(low = "#54AFC9", mid = "grey90", high = "#C95380") +
-  # scale_colour_gradient2(low = "#54AFC9", mid = "grey90", high = "#c77c01") +  #c99654 "#fd8d3c"
-  # scale_colour_gradient2(low = colors_multi[c(6)], mid = "grey90", high = colors_multi[c(2)]) + 
   theme(axis.title.x = element_blank(),
-  # scale_color_viridis() +
     axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5),
     axis.title.y = element_blank()); p2
 
