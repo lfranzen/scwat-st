@@ -29,6 +29,7 @@ colors_adi <- c("Adipocyte 1" = "#BFABC3",
                 "Adipocyte 3" = "#62376E")
 
 color_low <- "#441153"
+color_low2 <- "#62376e"
 color_high <- "#3CB67B"
 colors_ramp <- colorRampPalette(colors = c(color_low, color_high))
 
