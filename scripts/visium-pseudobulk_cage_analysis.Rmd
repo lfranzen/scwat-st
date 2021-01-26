@@ -93,7 +93,6 @@ cage <- read.table(file.path(DIR_ROOT, "data", "CAGE", "DE_bvsa_all_FDR5.txt"), 
 cage_sign <-subset(cage, FDR<0.05)
 cage_sign$chr_loc <- rownames(cage_sign)
 cage_sign <- cage_sign[-grep(pattern = "None@", x = cage_sign$Annotation), ]
-# head(cage_sign)
 ```
 
 ```{r cage_biomart}
@@ -115,7 +114,6 @@ bm <- getBM(attributes = c("ensembl_transcript_id_version", "ensembl_transcript_
             )
 
 cage_ann_data2 <- merge(x = cage_ann_data, y = bm, by.x = "enst_id", by.y = "ensembl_transcript_id", all=T)
-cage_ann_data2[cage_ann_data2$hgnc_symbol %in% "DEPP1",]
 
 cage_sign <- merge(x = cage_sign, y = cage_ann_data2, by.x = "Annotation")
 dim(cage_sign)
@@ -296,7 +294,7 @@ plotMA(res_oble, ylim=c(-2,2), main = "MA-plot")
 plotMA(resLFC_oble, main = "MA-plot with shrunken log2 fc (apeglm)")
 ```
 
-```{r deseq_oble_restable_plot, fig.width=1.5, fig.height=1, fig.show='hold'}
+```{r deseq_oble_restable_plot, fig.width=3, fig.height=2, fig.show='hold'}
 res_oble_df <- as.data.frame(res_oble)
 
 res_oble_head <- res_oble_df %>% 
@@ -344,7 +342,7 @@ p <- ggplot(res_oble_df, aes(x = log2FoldChange, y = -log10(padj), color = signi
                 axis.line = element_line(colour = "grey50"));p
 
 fname <- "bulk_dea_oble_vulcano"
-pdf(file = file.path(DIR_FIG, paste0(fname, ".pdf")), width = 6, height = 5);p;dev.off()
+pdf(file = file.path(DIR_FIG, paste0(fname, ".pdf")), width = 6, height = 5, useDingbats = F);p;dev.off()
 tiff(filename = file.path(DIR_FIG, paste0(fname, ".tiff")), units = "cm", width = 6*2.5, height = 5*2.5, res = 600); p; dev.off()
 ```
 
@@ -360,8 +358,6 @@ View and export results table
 #' table with exp values for genes labelled in above vulcano plot
 de_des_oble[, c("tissue_id", "condition")]
 # datatable(d_oble[glabs_oble, rownames(de_des_oble)], rownames = T, options = list(scrollX = TRUE), caption = "Expression of labelled genes in above vulcano plot.")
-
-
 ```
   
 
@@ -395,7 +391,6 @@ The design matrix in this case becomes a little bit more complicated. We can loo
 ```{r deseq_ins, message=TRUE}
 s_ins <- rownames(de_des_ins)
 d_ins <- bulk_data_ins[, s_ins]
-# rownames(d_ins) <- gene_table[rownames(d_ins), "gene_name_2"]
 
 dds_ins <- DESeqDataSetFromMatrix(countData = d_ins,
                                   colData = de_des_ins,
@@ -409,6 +404,7 @@ resultsNames(dds_ins) # lists the coefficients
 
 
 res_ins <- results(dds_ins, name="insulin_stim_1_vs_0")
+res_ins_df <- as.data.frame(res_ins)
 res_ins
 
 resLFC_ins <- lfcShrink(dds_ins, coef="insulin_stim_1_vs_0", type="apeglm")
@@ -424,7 +420,7 @@ plotMA(res_ins, ylim=c(-2,2), main = "MA-plot")
 plotMA(resLFC_ins, main = "MA-plot with shrunken log2 fc (apeglm)")
 ```
 
-```{r deseq_ins_restable_plot, fig.width=1.5, fig.height=1, fig.show='hold'}
+```{r deseq_ins_restable_plot, fig.width=3, fig.height=2, fig.show='hold'}
 res_ins_df <- as.data.frame(res_ins)
 
 res_ins_head_up <- res_ins_df %>% 
@@ -478,7 +474,7 @@ p <- ggplot(res_ins_df, aes(x = log2FoldChange, y = -log10(padj), color = signif
               axis.line = element_line(colour = "grey50"));p
 
 fname <- "bulk_dea_insulin_vulcano"
-pdf(file = file.path(DIR_FIG, paste0(fname, ".pdf")), width = 4, height = 4);p;dev.off()
+pdf(file = file.path(DIR_FIG, paste0(fname, ".pdf")), width = 4, height = 4, useDingbats = F);p;dev.off()
 tiff(filename = file.path(DIR_FIG, paste0(fname, ".tiff")), units = "cm", width = 4*2.5, height = 4*2.5, res = 600); p; dev.off()
 ```
 
@@ -487,16 +483,13 @@ tiff(filename = file.path(DIR_FIG, paste0(fname, ".tiff")), units = "cm", width 
 ```{r deseq_ins_plot2, fig.width=12, fig.height=6, fig.show='hold'}
 #' vulcano plot
 res_ins_df <- as.data.frame(res_ins_df)
-# hist(res_ins_df$pvalue)
 
 res_ins_df$significant_0.05 <- res_ins_df$pvalue < 0.05 
 res_ins_df$gene_labels <- ifelse(res_ins_df$significant_0.05 == T & abs(res_ins_df$log2FoldChange) > 1.5, 
                                  rownames(res_ins_df), "")
 
 glabs_ins <- res_ins_df[res_ins_df$gene_labels != "" & !is.na(res_ins_df$gene_labels), "gene_labels"]
-# for(l in glabs_ins){res_ins_df[l, "gene_labels"] <- gene_table[gene_table$gene_name_2 == l, "gene_name"]}
-  
-# res_ins_df$log2FoldChange <- res_ins_df$log2FoldChange * -1
+
 minmax_xilm <- round( max(abs(res_ins_df$log2FoldChange)) + 1 )
 
 ggplot(res_ins_df, aes(x = log2FoldChange, y = -log10(pvalue), color = significant_0.05)) +
@@ -532,9 +525,8 @@ datatable(d_ins[glabs_ins, rownames(de_des_ins)], rownames = T, options = list(s
 View and export results table
   
 ```{r deseq_ins_res_table}
-#' table with exp values for genes labelled in above vulcano plot
+#' Table with exp values for genes labelled in above vulcano plot
 head(res_ins_df[order(res_ins_df$padj), ])
-
 ```
   
   
@@ -607,7 +599,7 @@ p2 <- ggplot(res_ins_df, aes(x = log2FoldChange, y = -log10(padj), color = signi
 p <- (p1+p2);p
 
 fname <- "bulk_dea_insulin_cage_visium"
-pdf(file = file.path(DIR_FIG, paste0(fname, ".pdf")), width = 10, height = 4.5);p;dev.off()
+pdf(file = file.path(DIR_FIG, paste0(fname, ".pdf")), width = 10, height = 4.5, useDingbats = F);p;dev.off()
 tiff(filename = file.path(DIR_FIG, paste0(fname, ".tiff")), units = "cm", width = 10*2.5, height = 4.5*2.5, res = 600); p; dev.off()
 ```
   
@@ -647,7 +639,7 @@ ins_down_overlap
 ```
 
 
-```{r}
+```{r dea_insulin_down_view}
 cage_mod$symbol_updated <- cage_mod$symbol
 cage_mod[cage_mod$hgnc_symbol %in% c(ins_up_overlap2, ins_down_overlap2), "symbol_updated"] <- cage_mod[cage_mod$hgnc_symbol %in% c(ins_up_overlap2, ins_down_overlap2), "hgnc_symbol"]
 ```
@@ -722,7 +714,7 @@ p <- ggplot(d_up_long, aes(x = reorder(gene, expression, FUN = median), y = expr
         panel.grid.major.x = element_line(colour="grey90"));p
 
 fname <- "bulk_dea_insulin_cage_visium_up"
-pdf(file = file.path(DIR_FIG, paste0(fname, ".pdf")), width = 10, height = 4.5);p;dev.off()
+pdf(file = file.path(DIR_FIG, paste0(fname, ".pdf")), width = 10, height = 4.5, useDingbats = F);p;dev.off()
 tiff(filename = file.path(DIR_FIG, paste0(fname, ".tiff")), units = "cm", width = 10*2.5, height = 4.5*2.5, res = 600); p; dev.off()
 ```
 
@@ -750,7 +742,7 @@ p <- ggplot(d_down_long, aes(x = reorder(gene, expression, FUN = median), y = ex
         panel.grid.major.x = element_line(colour="grey90"));p
 
 fname <- "bulk_dea_insulin_cage_visium_down"
-pdf(file = file.path(DIR_FIG, paste0(fname, ".pdf")), width = 6, height = 4.5);p;dev.off()
+pdf(file = file.path(DIR_FIG, paste0(fname, ".pdf")), width = 6, height = 4.5, useDingbats = F);p;dev.off()
 tiff(filename = file.path(DIR_FIG, paste0(fname, ".tiff")), units = "cm", width = 6*2.5, height = 4.5*2.5, res = 600); p; dev.off()
 ```
 
@@ -777,22 +769,21 @@ p2 <- ggplot(df_cage_visium, aes(reorder(gene, visium.log2FoldChange), visium.lo
 p <- plot_grid(p1, p2, nrow = 2);p
 
 fname <- "bulk_dea_insulin_cage_visium_log2fc"
-pdf(file = file.path(DIR_FIG, paste0(fname, ".pdf")), width = 8, height = 8);p;dev.off()
+pdf(file = file.path(DIR_FIG, paste0(fname, ".pdf")), width = 8, height = 8, useDingbats = F);p;dev.off()
 tiff(filename = file.path(DIR_FIG, paste0(fname, ".tiff")), units = "cm", width = 8*2.5, height = 8*2.5, res = 600); p; dev.off()
 ```
 
-
-
+  
+  
+# Cluster response of insulin-responding genes  
+  
+  
 ## Visium adipocyte data
 
 ### Gene expression  
 
 ```{r prep_visium_adipocyte_assaydata}
-# VlnPlot(subset(se_ins, INSR>0), features = c("INSR"), slot = "scale.data", pt.size = 0.01)
-# VlnPlot(se_ins, features = c("ADIPOQ", "LEP"), group.by = "cluster_anno", slot = "scale.data", pt.size = 0)
-# VlnPlot(se_ins, features = c("ADIPOQ", "LEP"), group.by = "seurat_clusters", slot = "scale.data", pt.size = 0)
-
-se_ins_data_all <- GetAssayData(subset(se_ins, cluster_anno %in% c("Adipocyte 1", "Adipocyte 2")), slot = "data")
+se_ins_data_all <- GetAssayData(subset(se_ins, cluster_anno %in% c("Adipocyte 1", "Adipocyte 2")), slot = "data")  # normalized data
 ```
 
 
@@ -844,7 +835,7 @@ genes_ins_include <- intersect(rownames(se_ins_data_all), genes_ins)
 se_ins_data <- as.data.frame(se_ins_data_all[genes_ins_include, ])
 
 se_ins_data_grouped <- data.frame(row.names = rownames(se_ins_data))
-s_names <- unique(se_ins@meta.data$sample_name)  # metadata_ins$sample_name
+s_names <- unique(se_ins@meta.data$sample_name)
 sc_names <- c(paste(3, s_names, sep="."), paste(4, s_names, sep="."))
 se_ins_metadata <- data.frame(row.names = sc_names,
                               insulin_stim = rep(0, length(sc_names)), 
@@ -860,7 +851,7 @@ for(s in s_names){
   for(c in c(4, 5)){
     c_spots <- colnames(subset(se_ins, seurat_clusters == c))
     sc_spots <- intersect(c_spots, s_spots)
-    sc_data <- data.frame(Matrix::rowMeans(se_ins_data[, sc_spots]))  # Matrix::rowSums
+    sc_data <- data.frame(Matrix::rowMeans(se_ins_data[, sc_spots]))
     sc_name <- paste(c, s, sep=".")
     colnames(sc_data) <- sc_name
     se_ins_data_grouped <- cbind(se_ins_data_grouped, sc_data)
@@ -910,7 +901,7 @@ for(s in unique(se_ins_metadata$subject_id)){
   bool_lep_0 <- rownames(se_ins_metadata[(se_ins_metadata$subject_id==s & se_ins_metadata$cluster=="Adipocyte 1" & se_ins_metadata$insulin_stim=="0"),])
   bool_lep_1 <- rownames(se_ins_metadata[(se_ins_metadata$subject_id==s & se_ins_metadata$cluster=="Adipocyte 1" & se_ins_metadata$insulin_stim=="1"),])
   
-  pc <- .1 # pseudo count
+  pc <- .01 # pseudo count
   if(s=="NK49"){
     s_plin_all <- data.frame("ratio" = c(rowMeans(se_ins_data_grouped[ins_up_overlap, bool_plin_1]+pc) / (se_ins_data_grouped[ins_up_overlap, bool_plin_0]+pc), 
                                            rowMeans(se_ins_data_grouped[ins_down_overlap, bool_plin_1]+pc) / (se_ins_data_grouped[ins_down_overlap, bool_plin_0]+pc)), 
@@ -953,9 +944,6 @@ sd_up <- colSds(as.matrix(log2(se_ins_data_score_ratio[ins_up_overlap, ])))
 sd_down <- colSds(as.matrix(log2(se_ins_data_score_ratio[ins_down_overlap, ])))
 se_ins_data_score_log2sd <- data.frame("up" = sd_up,
                                        "down" = sd_down, row.names = colnames(se_ins_data_score_ratio))
-
-# se_ins_data_score_ratio
-# se_ins_data_score_mean
 ```
 
 
@@ -984,7 +972,7 @@ my_colour = list(
     cluster = colors_adi[1:2],
              # c("Adipocyte 2" = "#907198",
              #  "Adipocyte 1" = "#BFABC3"),
-    regulation = c(down = color_low, up = color_high)
+    regulation = c(down = color_low2, up = color_high)
 )
 
 ```
@@ -1027,18 +1015,17 @@ cal_z_score <- function(x){
 }
  
 data_hm_norm <- t(apply(se_ins_data_grouped, 1, cal_z_score))
-# data_hm_norm <- (apply(se_ins_data_grouped, 2, cal_z_score))
 
-fname <- "bulk_dea_insulin_cage_visium-cluster_heatmap"
-pdf(file = file.path(DIR_FIG, paste0(fname, ".pdf")), width = 6, height = 8);
+fname <- "bulk_dea_insulin_cage_visium-cluster_heatmap_zscore"
+pdf(file = file.path(DIR_FIG, paste0(fname, ".pdf")), width = 6, height = 8, useDingbats = F);
 breaksList <- seq(-1.5, 1.5, by = 0.1)
 p_hm <- pheatmap(data_hm_norm,  # se_ins_data_grouped, data_hm_norm
                  annotation_colors = my_colour,
                  annotation_col = my_sample_col[,c(1,3,4,5)],
                  annotation_row = my_gene_col,
                  breaks = breaksList,
-                 color = viridis::viridis(length(breaksList)), # colors_ramp(length(breaksList)),  #colorRampPalette(rev(brewer.pal(n = 7, name = "RdBu")))
-                 # cluster_rows = F, 
+                 # color = viridis::viridis(length(breaksList)),
+                 color = colorRampPalette(c(color_low2, "white", color_high))(length(breaksList)-1),
                  border_color = "white"
                  )
 dev.off()
@@ -1059,18 +1046,24 @@ write.table(x = t_export, file = file.path(DIR_RES, "tables", fname), quote = F,
 ```
 
 
-```{r plot_visium_adipocyte_insulin_hm_score_all, fig.width=4, fig.height=8}
+```{r plot_visium_adipocyte_insulin_hm_score_all, fig.width=4.5, fig.height=8}
 fname <- "bulk_dea_insulin_cage_visium-cluster_heatmap_log2ratio"
-pdf(file = file.path(DIR_FIG, paste0(fname, ".pdf")), width = 4, height = 8);
+pdf(file = file.path(DIR_FIG, paste0(fname, ".pdf")), width = 4.6, height = 8, useDingbats = F);
 
-breaksList <- seq(-1, 1, by = 0.01)
-pheatmap((log2(se_ins_data_score_ratio)),  # se_ins_data_grouped, data_hm_norm
+ph_plot <- log2(se_ins_data_score_ratio)
+ph_plot <- ph_plot[,rownames(my_sample_col_2[order(my_sample_col_2$cluster, my_sample_col_2$m_value),])]
+data_hm_norm <- t(apply(se_ins_data_grouped, 1, cal_z_score))
+
+breaksList <- seq(-4, 4, by = 0.5)
+pheatmap(ph_plot,
          annotation_colors = my_colour,
-         annotation_col = my_sample_col_2[,c(3,4)],
-         annotation_row = my_gene_col,
-         cluster_rows = F,
+         annotation_col = my_sample_col_2[order(my_sample_col_2$cluster, my_sample_col_2$m_value), c(3,4)],
+         annotation_row = my_gene_col, 
+         cluster_rows = T,
+         cluster_cols = F,
+         gaps_col = 4,
          breaks = breaksList,
-         color = viridis::viridis(length(breaksList)), # colors_ramp(length(breaksList)),  #colorRampPalette(rev(brewer.pal(n = 7, name = "RdBu")))
+         color = colorRampPalette(c(color_low2, "white", color_high))(length(breaksList)-1),
          border_color = "white"
          )
 
@@ -1081,19 +1074,19 @@ dev.off()
 
 ```{r plot_visium_adipocyte_insulin_hm_score_mean}
 fname <- "bulk_dea_insulin_cage_visium-cluster_heatmap_log2ratio_mean"
-pdf(file = file.path(DIR_FIG, paste0(fname, ".pdf")), width = 6.5, height = 3);
-breaksList <- seq(-.7, .7, by = 0.01)
+pdf(file = file.path(DIR_FIG, paste0(fname, ".pdf")), width = 6.5, height = 3, useDingbats = F);
+breaksList <- seq(-2.5, 2.5, by = 0.5)
 pheatmap(t(log2(se_ins_data_score_mean)),  # se_ins_data_grouped, data_hm_norm
          annotation_colors = my_colour,
          annotation_col = my_sample_col_2[,c(3,4)],
-         # annotation_row = my_gene_col,
          cluster_rows = F,
          breaks = breaksList,
-         color = viridis::viridis(length(breaksList)), # colors_ramp(length(breaksList)),  #colorRampPalette(rev(brewer.pal(n = 7, name = "RdBu")))
+         color = colorRampPalette(c(color_low2, "white", color_high))(length(breaksList)-1),
          border_color = "white"
          )
 dev.off()
 ```
+
 
 
 #### Boxplot  
@@ -1134,7 +1127,7 @@ p2 <- ggplot(d_plot, aes(x=cluster, y=down)) +
   theme(legend.position = "none");p2
 
 fname <- "bulk_dea_insulin_cage_visium-cluster_box_scores"
-pdf(file = file.path(DIR_FIG, paste0(fname, ".pdf")), width = 5, height = 2.5);
+pdf(file = file.path(DIR_FIG, paste0(fname, ".pdf")), width = 5, height = 2.5, useDingbats = F);
 plot_grid(p1, p2, nrow=1)
 dev.off()
 ```
@@ -1175,7 +1168,7 @@ p2 <- ggplot(subset(d_plot2, cluster=="Adipocyte 2"), aes(x=as.numeric(m_value),
   theme(legend.position = "none")
 
 fname <- "bulk_dea_insulin_cage_visium-cluster_corr_scores"
-pdf(file = file.path(DIR_FIG, paste0(fname, ".pdf")), width = 5, height = 2.5);
+pdf(file = file.path(DIR_FIG, paste0(fname, ".pdf")), width = 5, height = 2.5, useDingbats = F);
 plot_grid(p1, p2, nrow=1)
 dev.off()
 ```
@@ -1252,7 +1245,7 @@ p1 <- ggplot(df_cage_visium_adi, aes(x=reorder(gene, ratio_mean), y=ratio_mean, 
         plot.title = element_text(hjust = 0.5));p1
 
 fname <- "bulk_dea_insulin_cage_visium-cluster_ratios_bar"
-pdf(file = file.path(DIR_FIG, paste0(fname, ".pdf")), width = 12, height = 4);p1;dev.off()
+pdf(file = file.path(DIR_FIG, paste0(fname, ".pdf")), width = 12, height = 4, useDingbats = F);p1;dev.off()
 tiff(filename = file.path(DIR_FIG, paste0(fname, ".tiff")), units = "cm", width = 12*2.5, height = 4*2.5, res = 600); p1; dev.off()
 
 
@@ -1268,19 +1261,22 @@ p2 <- ggplot(df_cage_visium_adi, aes(x=reorder(gene, NO148), y=NO148, fill=clust
         plot.title = element_text(hjust = 0.5));p2
 
 fname <- "bulk_dea_insulin_cage_visium-cluster_ratios_bar_NO148"
-pdf(file = file.path(DIR_FIG, paste0(fname, ".pdf")), width = 12, height = 4);p2;dev.off()
+pdf(file = file.path(DIR_FIG, paste0(fname, ".pdf")), width = 12, height = 4, useDingbats = F);p2;dev.off()
 ```
 
 
 
 <br><br>
 
-## Visium: all clusters
+## Visium: all cluster data
 
+### Gene expression  
 ```{r data_visium_adipocyte_insulin_allclust}
-se_ins_allc <- GetAssayData(se_ins, slot = "data")
+se_ins_allc <- GetAssayData(se_ins[genes_ins_include,], slot = "data")  # normalized data for genes of interest
 ```
-
+  
+  
+#### Insulin responding genes 
 
 ```{r prep_visium_adipocyte_insulin_allclust}
 se_ins_allc_grouped <- data.frame(row.names = rownames(se_ins_allc))
@@ -1306,14 +1302,22 @@ for(s in s_names){
       c_spots <- colnames(subset(se_ins, seurat_clusters == c))
       sc_spots <- intersect(c_spots, s_spots)
       
-      if (length(sc_spots)>1) {
-        sc_data <- data.frame(Matrix::rowMeans(se_ins_allc[, sc_spots]))  # Matrix::rowSums Matrix::rowMeans  rowMeans_no0
+      spotn_cutoff <- 10  # originally 1
+      if (length(sc_spots) >= spotn_cutoff) {
+        sc_data <- data.frame(Matrix::rowMeans(se_ins_allc[, sc_spots]))
       } else if (length(sc_spots) == 0) {
+        # sc_data <- data.frame(se_ins_allc[, sc_spots])  # won't work if no spots
+        # sc_data[,1] <- 0
+        sc_data <- data.frame(value = rep(0, nrow(se_ins_allc)), row.names = rownames(se_ins_allc))
+      } else if (length(sc_spots) == 1) {
         sc_data <- data.frame(se_ins_allc[, sc_spots])
-        sc_data$sc_name <- 0
+        sc_data[,1] <- 0
       } else {
-        sc_data <- data.frame(se_ins_allc[, sc_spots])
+        sc_data <- data.frame(Matrix::rowMeans(se_ins_allc[, sc_spots]))
+        sc_data[,1] <- 0
       }
+      # print(paste(c, s, sep="."))
+      # print(head(sc_data))
       
       sc_name <- paste(c, s, sep=".")
       colnames(sc_data) <- sc_name
@@ -1353,6 +1357,13 @@ for(s in unique(se_ins_metadata_allc$subject_id)){
     up_sum_0 <- sum(se_ins_allc_grouped[ins_up_overlap, bool_c_0])
     down_sum_1 <- sum(se_ins_allc_grouped[ins_down_overlap, bool_c_1])
     down_sum_0 <- sum(se_ins_allc_grouped[ins_down_overlap, bool_c_0])
+    
+    
+    ngenes_up_1 <- sum(se_ins_allc_grouped[ins_up_overlap, bool_c_1]>0)
+    ngenes_up_0 <- sum(se_ins_allc_grouped[ins_up_overlap, bool_c_0]>0)
+    ngenes_down_1 <- sum(se_ins_allc_grouped[ins_down_overlap, bool_c_1]>0)
+    ngenes_down_0 <- sum(se_ins_allc_grouped[ins_down_overlap, bool_c_0]>0)
+    
     if(s=="NK49"){
     s_c_all <- data.frame("ratio" = c(rowMeans(se_ins_allc_grouped[ins_up_overlap, bool_c_1]+pc) / (se_ins_allc_grouped[ins_up_overlap, bool_c_0]+pc), 
                                       rowMeans(se_ins_allc_grouped[ins_down_overlap, bool_c_1]+pc) / (se_ins_allc_grouped[ins_down_overlap, bool_c_0]+pc)), 
@@ -1365,8 +1376,19 @@ for(s in unique(se_ins_metadata_allc$subject_id)){
                             )
     }
     
-    if(up_sum_1==0 | up_sum_0==0 | down_sum_1==0 | down_sum_0==0){
-      s_c_all$ratio <- 1
+    if (up_sum_1==0 | up_sum_0==0) {
+      s_c_all[ins_up_overlap, "ratio"] <- 1
+    } 
+    if (down_sum_1==0 | down_sum_0==0){
+      s_c_all[ins_down_overlap, "ratio"] <- 1
+    }
+    
+    gene_cutoff <- 2
+    if (ngenes_up_1 < gene_cutoff | ngenes_up_0 < gene_cutoff) {
+      s_c_all[ins_up_overlap, ] <- 1
+    } 
+    if (ngenes_down_1 < gene_cutoff | ngenes_down_0 < gene_cutoff){
+      s_c_all[ins_down_overlap, ] <- 1
     }
     
     s_clust <- data.frame("up" = mean(s_c_all[ins_up_overlap, "ratio"]), 
@@ -1387,12 +1409,35 @@ for(s in unique(se_ins_metadata_allc$subject_id)){
 
 
 
+
+```{r prep_visium_adipocyte_insulin_allclust_score_savetable}
+fname <- "bulk_grouped_cluster_expression-all_clusters_grouped_mean_expr.tsv"
+t_export <- se_ins_allc_grouped
+t_export$gene <- rownames(t_export)
+write.table(x = t_export, file = file.path(DIR_RES, "tables", fname), quote = F, sep = "\t", row.names = F)
+
+
+fname <- "bulk_grouped_cluster_expression_log2ratios-all_clusters_heatmap_log2ratio.tsv"
+t_export <- log2(se_ins_data_score_allc_ratio)
+t_export$gene <- rownames(t_export)
+write.table(x = t_export, file = file.path(DIR_RES, "tables", fname), quote = F, sep = "\t", row.names = F)
+
+
+fname <- "bulk_grouped_cluster_expression_log2ratios-all_clusters_heatmap_log2ratio_mean.tsv"
+t_export <- log2(se_ins_data_score_allc_mean)
+t_export$cluster_subject <- rownames(t_export)
+write.table(x = t_export, file = file.path(DIR_RES, "tables", fname), quote = F, sep = "\t", row.names = F)
+```
+  
+  
+  
+
 ### Heatmap
 
 ```{r hm_all_clus_colors}
 cols_allc <- rep("grey80", length(c_ids))
 names(cols_allc) <- paste0("C", c_ids)
-cols_allc[c("C3", "C4")] <- colors_adi[c("Adipocyte 2", "Adipocyte 1")] # c("#F768A1", "#FBB4B9")
+cols_allc[c("C5", "C4")] <- colors_adi[c("Adipocyte 2", "Adipocyte 1")] # c("#F768A1", "#FBB4B9")
 
 my_colour_allc = list(
     condition = c(lean = colors_main[1], obese = colors_main[2]),
@@ -1439,27 +1484,28 @@ my_sample_col_allc
 ```
 
 
-```{r plot_hm, fig.width=16, fig.height=8}
+```{r plot_hm_all_clusters_log2ratio, fig.width=16, fig.height=8}
 fname <- "bulk_dea_insulin_cage_visium-all_clusters_heatmap_log2ratio"
-pdf(file = file.path(DIR_FIG, paste0(fname, ".pdf")), width = 16, height = 8);
+pdf(file = file.path(DIR_FIG, paste0(fname, ".pdf")), width = 16, height = 8, useDingbats = F);
 breaksList <- seq(-2, 2, by = 0.01)
-pheatmap((log2(se_ins_data_score_allc_ratio)),  # se_ins_data_grouped, data_hm_norm
-         annotation_colors = my_colour_allc,
-         annotation_col = my_sample_col_allc[,c(2,3,4)],
-         annotation_row = my_gene_col,
-         cluster_rows = F,
-         breaks = breaksList,
-         color = viridis::viridis(length(breaksList)), # colors_ramp(length(breaksList)),  #colorRampPalette(rev(brewer.pal(n = 7, name = "RdBu")))
-         border_color = "white"
-         )
+pheatmap(
+   mat = (log2(se_ins_data_score_allc_ratio)),  # se_ins_data_grouped, data_hm_norm
+   annotation_colors = my_colour_allc,
+   annotation_col = my_sample_col_allc[,c(2,3,4)],
+   annotation_row = my_gene_col,
+   cluster_rows = T,
+   breaks = breaksList,
+   color = colorRampPalette(c(color_low2, "white", color_high))(length(breaksList)-1),
+   border_color = "white"
+   )
  dev.off()
 ```
 
 
 ```{r plot_visium_adipocyte_insulin_hm_score_mean_allc, fig.width=4, fig.height=12}
 fname <- "bulk_dea_insulin_cage_visium-all_clusters_heatmap_log2ratio_mean"
-pdf(file = file.path(DIR_FIG, paste0(fname, ".pdf")), width = 4.5, height = 12)
-breaksList <- seq(-1, 1, by = 0.01)
+pdf(file = file.path(DIR_FIG, paste0(fname, ".pdf")), width = 4.5, height = 12, useDingbats = F)
+breaksList <- seq(-2.5, 2.5, by = 0.1)
 pheatmap((log2(se_ins_data_score_allc_mean)),  # se_ins_data_grouped, data_hm_norm
          annotation_colors = my_colour_allc,
          annotation_row = my_sample_col_allc[,c(2,3,4)],
@@ -1467,18 +1513,52 @@ pheatmap((log2(se_ins_data_score_allc_mean)),  # se_ins_data_grouped, data_hm_no
          cluster_rows = T,
          cluster_cols = F,
          breaks = breaksList,
-         color = viridis::viridis(length(breaksList)), # colors_ramp(length(breaksList)),  #colorRampPalette(rev(brewer.pal(n = 7, name = "RdBu")))
+         color = colorRampPalette(c(color_low2, "white", color_high))(length(breaksList)-1),
          border_color = "white"
          )
 dev.off()
 ```
 
 
+Only adipocytes PLIN and LEP  
+
+```{r plot_visium_adipocyte_insulin_hm_score_mean, fig.width=4.5, fig.height=8}
+
+ph_plot <- log2(se_ins_data_score_allc_ratio)
+ph_plot <- ph_plot[, c(grep("^5.", colnames(ph_plot), value = T), grep("^4.", colnames(ph_plot), value = T))]
+colnames(ph_plot) <- sub("^5.", "LEP.", colnames(ph_plot))
+colnames(ph_plot) <- sub("^4.", "PLIN.", colnames(ph_plot))
+
+ph_plot <- ph_plot[, rownames(my_sample_col_2[order(my_sample_col_2$cluster, my_sample_col_2$m_value),]) ]
+
+
+fname <- "bulk_dea_insulin_cage_visium-all_cluster_heatmap_log2ratio_adipocytes"
+pdf(file = file.path(DIR_FIG, paste0(fname, ".pdf")), width = 4.6, height = 8, useDingbats = F);
+
+breaksList <- seq(-4, 4, by = 0.5)
+pheatmap(ph_plot,
+         annotation_colors = my_colour,
+         annotation_col = my_sample_col_2[order(my_sample_col_2$cluster, my_sample_col_2$m_value), c(3,4)],
+         annotation_row = my_gene_col, 
+         cluster_rows = T,
+         cluster_cols = F,
+         gaps_col = 4,
+         breaks = breaksList,
+         color = colorRampPalette(c(color_low2, "white", color_high))(length(breaksList)-1),
+         border_color = "white"
+         )
+dev.off()
+```
+
+
+
 ### Box plot
 
-```{r plot_visium_adipocyte_insulin_box_score_allc, fig.width=6, fig.height=2}
+```{r plot_visium_adipocyte_insulin_box_score_allc, fig.width=12, fig.height=4}
 d_plot <- cbind(log2(se_ins_data_score_allc_mean), my_sample_col_allc)
 d_plot$order <- rep(seq(1:19), 4)
+d_plot[d_plot$up==0,"up"] <- NA
+d_plot[d_plot$down==0,"down"] <- NA
 
 p1 <- ggplot(d_plot, aes(x=reorder(cluster, order) , y=up))+
   geom_hline(yintercept = c(seq(-3,3,1),4), linetype="solid", color = "grey90") +
@@ -1486,13 +1566,13 @@ p1 <- ggplot(d_plot, aes(x=reorder(cluster, order) , y=up))+
   geom_boxplot() +
   geom_line(aes(group=subject_id), color = "grey80", alpha=0.6) +
   geom_point(size=2, aes(color=as.factor(m_value)), alpha=0.8) +
-  geom_hline(yintercept = mean(d_plot$up), linetype="dashed", color = "orange", alpha=0.8) +
+  geom_hline(yintercept = mean(d_plot$up, na.rm=T), linetype="dashed", color = "orange", alpha=0.8) +
   scale_color_manual(values = my_colour$m_value) +
   ylim(min(d_plot[,1:2])-.02, max(d_plot[,1:2])+0.02) +
   labs(y="Expression log2-ratio") +
   labs(title="Upreg. genes", x="Cluster", color="M value") +
   theme_classic() +
-  theme(legend.position = "bottom");p1
+  theme(legend.position = "bottom")
 
 p2 <- ggplot(d_plot, aes(x=reorder(cluster, order), y=down)) +
   geom_hline(yintercept = c(seq(-3,3,1),4), linetype="solid", color = "grey90") +
@@ -1500,7 +1580,7 @@ p2 <- ggplot(d_plot, aes(x=reorder(cluster, order), y=down)) +
   geom_boxplot() +
   geom_line(aes(group=subject_id), color = "grey80", alpha=0.6) +
   geom_point(size=2, aes(color=as.factor(m_value)), alpha=0.8) +
-  geom_hline(yintercept = mean(d_plot$down), linetype="dashed", color = "orange", alpha=0.8) +
+  geom_hline(yintercept = mean(d_plot$down, na.rm=T), linetype="dashed", color = "orange", alpha=0.8) +
   scale_color_manual(values = my_colour$m_value) +
   ylim(min(d_plot[,1:2])-.02, max(d_plot[,1:2])+0.02) +
   labs(y="Expression log2-ratio") +
@@ -1509,10 +1589,69 @@ p2 <- ggplot(d_plot, aes(x=reorder(cluster, order), y=down)) +
   theme(legend.position = "bottom")
 
 fname <- "bulk_dea_insulin_cage_visium-all_cluster_box_scores"
-pdf(file = file.path(DIR_FIG, paste0(fname, ".pdf")), width = 12, height = 4);
+pdf(file = file.path(DIR_FIG, paste0(fname, ".pdf")), width = 12, height = 4, useDingbats = F);
 plot_grid(p1, p2, nrow=1)
 dev.off()
 ```
+
+
+```{r plot_visium_adipocyte_insulin_box_score_allc_new, fig.width=4, fig.height=3}
+canno_merge <- canno_ins
+canno_merge$cluster <- paste0("C", canno_ins$seurat_clusters)
+c_keep <- subset(canno_merge, cluster_group %in% c("Adipocyte", "Fibroblast/Pread", "Vascular"))$cluster
+
+
+d_plot <- cbind(log2(se_ins_data_score_allc_mean), my_sample_col_allc)
+d_plot$order <- rep(seq(1:19), 4)
+d_plot[d_plot$up==0,"up"] <- NA
+d_plot[d_plot$down==0,"down"] <- NA
+d_plot$up_score <- (d_plot$up - mean(d_plot$up, na.rm = T)) / sd(d_plot$up, na.rm = T)
+
+d_plot <- subset(d_plot, cluster %in% c_keep)
+d_plot2 <- merge(d_plot, canno_merge, by="cluster")
+d_plot2$cluster <- as.factor(d_plot2$cluster)
+
+
+p1 <- ggplot(d_plot2, aes(x=cluster_anno , y=up_score))+
+  geom_hline(yintercept = 0, linetype="solid", color = "grey50") +
+  geom_boxplot(width=0.5) +
+  geom_point(size=1, aes(color=as.factor(m_value)), alpha=1) +
+  coord_flip() +
+  scale_x_discrete(limits = rev) +
+  scale_color_manual(values = my_colour$m_value) +
+  ylim(min(d_plot[,1:2])-.02, max(d_plot[,1:2])+0.02) +
+  labs(y="Standardized log2-ratio") +
+  labs(title="Insulin resp. gene signature", x="", color="M value") +
+  theme_classic() +
+  theme(legend.position = "bottom"); p1
+
+p2 <- ggplot(d_plot2, aes(x=reorder(cluster_anno, up_score, na.rm = TRUE) , y=up_score))+
+  geom_hline(yintercept = 0, linetype="solid", color = "grey50") +
+  geom_boxplot(width=0.5) +
+  geom_point(size=1, aes(color=as.factor(m_value)), alpha=1) +
+  coord_flip() +
+  scale_color_manual(values = my_colour$m_value) +
+  ylim(min(d_plot[,1:2])-.02, max(d_plot[,1:2])+0.02) +
+  labs(y="Standardized log2-ratio") +
+  labs(title="Insulin resp. gene signature", x="", color="M value") +
+  theme_classic() +
+  theme(legend.position = "bottom"); p2
+
+ 
+png_res <- 300
+fname1 <- "bulk_dea_insulin_cage_visium-all_cluster_box_scores_selected-a"
+png(file.path(DIR_FIG, paste0(fname1, ".png")), width = 4*png_res, height = 3*png_res, res = png_res);p1;dev.off()
+
+fname2 <- "bulk_dea_insulin_cage_visium-all_cluster_box_scores_selected-b"
+png(file.path(DIR_FIG, paste0(fname2, ".png")), width = 4*png_res, height = 3*png_res, res = png_res);p2;dev.off()
+
+
+fname <- "bulk_dea_insulin_cage_visium-all_cluster_box_scores_selected.csv"
+write.csv(d_plot2, file.path(DIR_RES, "tables", fname), quote = F, row.names = F)
+
+```
+
+
 
 <br><br>
 
