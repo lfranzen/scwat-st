@@ -30,7 +30,9 @@ colors_adi <- c("Adipocyte 1" = "#BFABC3",
 
 color_low <- "#441153"
 color_low2 <- "#62376e"
+color_low3 <- "#772A82"
 color_high <- "#3CB67B"
+color_high2 <- "#1D793D"
 colors_ramp <- colorRampPalette(colors = c(color_low, color_high))
 
 # color_func_blue <- colorRampPalette(colors = c("#ccebf0", "#3083a7"))  # "#3097a7"
