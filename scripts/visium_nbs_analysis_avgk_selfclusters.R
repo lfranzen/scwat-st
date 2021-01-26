@@ -5,132 +5,65 @@
 #' Jan 2020
 ########################
 
-#' Set up
+#' SET UP
+
+#' Select analysis:
+
+ANALYSIS <- "baseline"
+# ANALYSIS <- "insulin"
+
+
+#' Load libs
 library(magrittr)
 library(STutility)
+library(patchwork)
 
+#' Define paths
 DIR_IN <- file.path(getwd(), "data", "visium")
 DIR_OUT <- file.path(getwd(), "results", "visium", "tables")
+DIR_WD <- file.path(getwd(), "scripts")
 
+source(file.path(DIR_WD, "colors.R"))
 
-#####
-#' Read data
+# ===================================
+#' READ DATA & LOAD IMGS
+
 metadata <- read.delim(file.path(DIR_IN, "visium_sample_metadata.tsv"), sep = "\t", stringsAsFactors = F)
 
-se_base <- readRDS(file.path(DIR_OUT, "..", "se-object.visium_baseline.rds"))
-se <- se_base
+if (ANALYSIS == "baseline") {
+  se_base <- readRDS(file.path(DIR_OUT, "..", "se-object.visium_baseline.rds"))
+  se <- se_base
+} else if (ANALYSIS == "insulin") {
+  se_ins <- readRDS(file.path(DIR_OUT, "..", "se-object.visium_insulin.rds"))
+  se <- se_ins
+  se <- AddMetaData(se, metadata = paste0(se$subject_id, "_", se$insulin_stim, "_", se$sample_id), col.name = "subject_id")
+}
+
 se <- LoadImages(se, time.resolve = T, verbose = T, xdim = 100)
 
-se_stats1 <- se@meta.data %>%
-  dplyr::group_by(subject_alias, subject_id, tissue_id, seu_n, novaseq_id) %>% 
+#' Summary data
+se_stats <- se@meta.data %>%
+  dplyr::group_by(subject_id, tissue_id, seu_n, novaseq_id) %>% 
   dplyr::count(name = "spots")
-se_stats1$seu_n <- paste0("S", se_stats1$seu_n)
-colnames(se_stats1)[colnames(se_stats1)=="seu_n"] <- "sample"
+se_stats$seu_n <- paste0("S", se_stats$seu_n)
+colnames(se_stats)[colnames(se_stats)=="seu_n"] <- "sample"
+
+n_samples <- length(se_stats$sample)
+n_clusters <- length(unique(se$seurat_clusters))
 
 
-#####
-#' Create "spatial" network for each sample
-spatnet_init <- GetSpatNet(se)
+# ===================================
+#' Define functions
 
-spatnet <- do.call(rbind, lapply(seq_along(spatnet_init), function(i) {
-  spnet <- spatnet_init[[i]]
-  spnet$cluster_from <- se[[]][spnet$from, "seurat_clusters"]
-  spnet$cluster_to <- se[[]][spnet$to, "seurat_clusters"]
-  spnet$sample <- paste0(i)
-  return(spnet)
-}))
-
-spatnet$cluster_from <- as.factor(as.numeric(spatnet$cluster_from))
-spatnet$cluster_to <- as.factor(as.numeric(spatnet$cluster_to))
-
-
-#####
-#' Plot
-colors_clusters <- se@meta.data[, c("seurat_clusters", "cluster_anno", "cluster_group", "cluster_color")] %>%
-  dplyr::distinct() %>%
-  dplyr::arrange(seurat_clusters)
-
-pdf(file.path(DIR_OUT, "../figures", paste0("nbs_cluster_k.spatial.baseline.pdf")), width = 12, height = 9, useDingbats = F)
-for(cluster_view in c("1", "3", "4", "6", "8", "11", "16", "20")){
-  spatnet.subset <- subset(spatnet, cluster_from %in% cluster_view)
-  spatnet.subset_conly <- subset(spatnet.subset, cluster_to %in% cluster_view)
-
-  p <- ggplot() +
-    geom_point(data = spatnet.subset, aes(start_x, -start_y, color = cluster_from), size = .5) +
-    geom_segment(data = spatnet.subset_conly, aes(x = start_x, xend = end_x, y = -start_y, yend = -end_y), size=0.3) +
-    labs(color="") +
-    scale_color_manual(values = colors_clusters[colors_clusters$seurat_clusters==cluster_view,"cluster_color"]) +
-    facet_wrap(~sample) +
-    theme_classic();
-  print(p)
-  # png(file.path(DIR_OUT, "../figures", paste0("nbs_cluster_k_",cluster_view,".png")), width = 6000, height = 4500, res = 500);p;dev.off()
-}
-dev.off()
-
-
-#####
-#' Count avgerage degree (k_avg)
-N <- length(unique(c(spatnet.subset$from)))
-ki <- spatnet.subset_conly %>%
-  dplyr::group_by(from) %>%
-  dplyr::count(name = "ki")
-L <- sum(ki$ki)/2
-k_avg <- (2*L)/N
-
-
-#' Calculate avg degree for all samples and clusters
-k_avg_list <- list()
-k_avg_df <- data.frame(row.names = paste0("S", seq(1,10)))
-
-for(cluster_view in as.character(seq(1,20))){
-  for(s in seq(1,10)){
-    spatnet.subset <- subset(spatnet, cluster_from %in% cluster_view)
-    spatnet.subset <- subset(spatnet.subset, sample == s)
-    spatnet.subset_conly <- subset(spatnet.subset, cluster_to %in% cluster_view)
-    
-    N <- length(unique(c(spatnet.subset$from)))
-    ki <- spatnet.subset_conly %>%
-      dplyr::group_by(from) %>%
-      dplyr::count(name = "ki")
-    L <- sum(ki$ki)/2
-    k_avg <- (2*L)/N
-    k_avg_list[[paste0("S", s)]] <- k_avg
-  }
-  k_avg_df_add <- as.data.frame(unlist(k_avg_list))
-  colnames(k_avg_df_add) <- paste0("kavg_cluster_", cluster_view)
-  k_avg_df <- cbind(k_avg_df, k_avg_df_add)
-}
-
-k_avg_df$sample <- rownames(k_avg_df)
-
-
-#' Reorder sample ids to match correct tissue
-sample_conv <- t(data.frame(S1 = "S42",
-                            S2 = "S55",
-                            S3 = "S44",
-                            S4 = "S46",
-                            S5 = "S48",
-                            S6 = "S49",
-                            S7 = "S50",
-                            S8 = "S51",
-                            S9 = "S52",
-                            S10 = "S54", 
-                            stringsAsFactors = F, row.names = "novaseq_id"))
-sample_conv <- as.data.frame(sample_conv)
-sample_conv$sample <- rownames(sample_conv)
-se_stats_neworder <- se_stats1
-se_stats_neworder$sample <- NULL
-se_stats_neworder <- merge(se_stats_neworder, sample_conv, by="novaseq_id")
-k_avg_out <- merge(se_stats_neworder[,c(1:4,6)], k_avg_df, by = "sample")
-
-
-write.csv(k_avg_out, file = file.path(DIR_OUT, "nbs_cluster_kavg.baseline.csv"), row.names = F)
-# write.csv(k_avg_out[,1:5], file = file.path(DIR_OUT, "nbs_cluster_kavg.sample_id_conversion.csv"), row.names = F)
-
-
-#####
-#' Randomise spot cluster locations - permute multiple times to obtain avg k for random state
-
+#' Randomise Cluster IDs within Subject data and calculate average degree
+#' 
+#' @param se.object Seurat (STUtility) object containing cluster and sample identities for each spot in the metadata.
+#' @param column.clusters.id Column name in metadata corresponding to cluster ID of the spots. Default "seurat_clusters".
+#' @param column.sample.id Column name in metadata corresponding to Sample ID of the spots.
+#' @param random.seed (Optional) Random seed for the random sampling. Default is NA.
+#' @param se.SpatNet (Optional) Provide the output from GetSpatNet(se.object). Default is NA (i.e computed within the function).
+#' @return Data frame containing average degree for network.
+#' @export
 RandomClusteringSpatNet <- function (
   se.object,
   column.cluster.id,
@@ -153,7 +86,7 @@ RandomClusteringSpatNet <- function (
   se_metadata_perm <- se_metadata %>% 
     dplyr::group_by(sample_id) %>% 
     dplyr::mutate(clusters_perm = seurat_clusters[sample(dplyr::row_number())])
-
+  
   #' Add shuffled clusters to se object metadata
   se.object <- AddMetaData(se.object, as.character(se_metadata_perm$clusters_perm), col.name = "clusters_perm")
   
@@ -187,7 +120,7 @@ RandomClusteringSpatNet <- function (
       spatnet.subset <- subset(spatnet, cluster_from %in% cluster_view)
       spatnet.subset <- subset(spatnet.subset, sample == s)
       spatnet.subset_conly <- subset(spatnet.subset, cluster_to %in% cluster_view)
-
+      
       N <- length(unique(c(spatnet.subset$from)))
       ki <- spatnet.subset_conly %>%
         dplyr::group_by(from) %>%
@@ -206,12 +139,130 @@ RandomClusteringSpatNet <- function (
 }
 
 
+# ===================================
+#' RUN NBS ANALYSIS
+#' Create "spatial" network for each sample
+spatnet_init <- GetSpatNet(se)
+
+spatnet <- do.call(rbind, lapply(seq_along(spatnet_init), function(i) {
+  spnet <- spatnet_init[[i]]
+  spnet$cluster_from <- se[[]][spnet$from, "seurat_clusters"]
+  spnet$cluster_to <- se[[]][spnet$to, "seurat_clusters"]
+  spnet$sample <- paste0(i)
+  return(spnet)
+}))
+
+spatnet$cluster_from <- as.factor(as.numeric(spatnet$cluster_from))
+spatnet$cluster_to <- as.factor(as.numeric(spatnet$cluster_to))
+
+
+#####
+#' Plot
+colors_clusters <- se@meta.data[, c("seurat_clusters", "cluster_anno", "cluster_group", "cluster_color")] %>%
+  dplyr::distinct() %>%
+  dplyr::arrange(seurat_clusters)
+
+pdf(file.path(DIR_OUT, "../figures", paste0("nbs_cluster_k.spatial.", ANALYSIS, ".pdf")), width = 12, height = 9, useDingbats = F)
+for(cluster_view in c("1", "4", "5", "6", "7", "12", "14", "17")){
+  spatnet.subset <- subset(spatnet, cluster_from %in% cluster_view)
+  spatnet.subset_conly <- subset(spatnet.subset, cluster_to %in% cluster_view)
+
+  p <- ggplot() +
+    geom_point(data = spatnet.subset, aes(start_x, -start_y, color = cluster_from), size = .5) +
+    geom_segment(data = spatnet.subset_conly, aes(x = start_x, xend = end_x, y = -start_y, yend = -end_y), size=0.3) +
+    labs(color="") +
+    scale_color_manual(values = colors_clusters[colors_clusters$seurat_clusters==cluster_view,"cluster_color"]) +
+    facet_wrap(~sample) +
+    theme_classic();
+  print(p)
+}
+dev.off()
+
+
+#####
+#' Count avgerage degree (k_avg)
+N <- length(unique(c(spatnet.subset$from)))
+ki <- spatnet.subset_conly %>%
+  dplyr::group_by(from) %>%
+  dplyr::count(name = "ki")
+L <- sum(ki$ki)/2
+k_avg <- (2*L)/N
+
+
+#' Calculate avg degree for all samples and clusters
+k_avg_list <- list()
+k_avg_df <- data.frame(row.names = paste0("S", seq(1, n_samples)))
+
+for(cluster_view in as.character(seq(1,n_clusters))){
+  for(s in seq(1, n_samples)){
+    spatnet.subset <- subset(spatnet, cluster_from %in% cluster_view)
+    spatnet.subset <- subset(spatnet.subset, sample == s)
+    spatnet.subset_conly <- subset(spatnet.subset, cluster_to %in% cluster_view)
+    
+    N <- length(unique(c(spatnet.subset$from)))
+    ki <- spatnet.subset_conly %>%
+      dplyr::group_by(from) %>%
+      dplyr::count(name = "ki")
+    L <- sum(ki$ki)/2
+    k_avg <- (2*L)/N
+    k_avg_list[[paste0("S", s)]] <- k_avg
+  }
+  k_avg_df_add <- as.data.frame(unlist(k_avg_list))
+  colnames(k_avg_df_add) <- paste0("kavg_cluster_", cluster_view)
+  k_avg_df <- cbind(k_avg_df, k_avg_df_add)
+}
+
+k_avg_df$sample <- rownames(k_avg_df)
+
+
+#' Reorder sample ids to match correct tissue
+if (ANALYSIS == "baseline") {
+  sample_conv <- t(data.frame(S1 = "S42",
+                              S2 = "S55",
+                              S3 = "S44",
+                              S4 = "S46",
+                              S5 = "S48",
+                              S6 = "S49",
+                              S7 = "S50",
+                              S8 = "S51",
+                              S9 = "S52",
+                              S10 = "S54", 
+                              stringsAsFactors = F, row.names = "novaseq_id"))
+} else if ( ANALYSIS == "insulin") {
+  sample_conv <- t(data.frame(
+                              S1 = "S41",
+                              S2 = "S42",
+                              S3 = "S43",
+                              S4 = "S44",
+                              S5 = "S45",
+                              S6 = "S46",
+                              S7 = "S47",
+                              S8 = "S52",
+                              S9 = "S53", 
+                              stringsAsFactors = F, row.names = "novaseq_id"))
+}
+sample_conv <- as.data.frame(sample_conv)
+sample_conv$sample <- rownames(sample_conv)
+se_stats_neworder <- se_stats
+se_stats_neworder$sample <- NULL
+se_stats_neworder <- merge(se_stats_neworder, sample_conv, by="novaseq_id")
+k_avg_out <- merge(se_stats_neworder[,c(1:3,5)], k_avg_df, by = "sample")
+
+#' Export table
+write.csv(k_avg_out, file = file.path(DIR_OUT, paste0("nbs_cluster_kavg.", ANALYSIS, ".csv")), row.names = F)
+
+
+# ===================================
+#' EXPECTED: RANDOMISED DATA
+#' 
 #' Run for multiple random seeds
 se_spat_net <- GetSpatNet(se)
 n_perm <- 50
 avgk_df_perm_list <- list()
-for(i in seq(1,n_perm)){
-  avgk_df_perm_list[[i]] <- RandomClusteringSpatNet(se, column.cluster.id = "seurat_clusters", column.sample.id = "sample_id", 
+for(i in seq(1, n_perm)){
+  avgk_df_perm_list[[i]] <- RandomClusteringSpatNet(se, 
+                                                    column.cluster.id = "seurat_clusters", 
+                                                    column.sample.id = "sample_id", 
                                                     se.SpatNet = se_spat_net,
                                                     random.seed = i
                                                     )
@@ -226,7 +277,10 @@ for(c in seq(1:n_cols)){
   avgk_df_perm_avg$c_avg <- colMeans(cluster_avgks)
   avgk_df_perm_sd$c_sd <- colSds(cluster_avgks)
   avgk_df_perm_me$c_me <- qnorm(.95) * ( avgk_df_perm_avg$c_avg / sqrt(length(avgk_df_perm_list)) )  # margin of error at 90% CI
-  colnames(avgk_df_perm_avg)[colnames(avgk_df_perm_avg)=="c_avg"] <- colnames(avgk_df_perm_sd)[colnames(avgk_df_perm_sd)=="c_sd"] <- colnames(avgk_df_perm_me)[colnames(avgk_df_perm_me)=="c_me"] <- colnames(avgk_df_perm_list[[1]])[c]
+  colnames(avgk_df_perm_avg)[colnames(avgk_df_perm_avg)=="c_avg"] <- 
+    colnames(avgk_df_perm_sd)[colnames(avgk_df_perm_sd)=="c_sd"] <- 
+    colnames(avgk_df_perm_me)[colnames(avgk_df_perm_me)=="c_me"] <- 
+    colnames(avgk_df_perm_list[[1]])[c]
 }
 
 
@@ -235,16 +289,19 @@ rownames(k_avg_out) <- k_avg_out$sample
 k_avg_perm_diff <- k_avg_out[rownames(avgk_df_perm_avg), colnames(avgk_df_perm_avg)] - avgk_df_perm_avg
 k_avg_perm_zscore <- (k_avg_out[rownames(avgk_df_perm_avg), colnames(avgk_df_perm_avg)] - avgk_df_perm_avg) / avgk_df_perm_sd
 
+#' Export tables
+write.csv(avgk_df_perm_avg, file = file.path(DIR_OUT, paste0("nbs_cluster_kavg-perm_avg.", ANALYSIS, ".csv")), row.names = T)
+write.csv(avgk_df_perm_sd, file = file.path(DIR_OUT, paste0("nbs_cluster_kavg-perm_sd.", ANALYSIS, ".csv")), row.names = T)
+write.csv(avgk_df_perm_me, file = file.path(DIR_OUT, paste0("nbs_cluster_kavg-perm_me.", ANALYSIS, ".csv")), row.names = T)
+write.csv(k_avg_perm_diff, file = file.path(DIR_OUT, paste0("nbs_cluster_kavg-perm_diff_score.", ANALYSIS, ".csv")), row.names = T)
+write.csv(k_avg_perm_zscore, file = file.path(DIR_OUT, paste0("nbs_cluster_kavg-perm_zscore.", ANALYSIS, ".csv")), row.names = T)
 
+# k_avg_perm_diff <- read.csv(file = file.path(DIR_OUT, paste0("nbs_cluster_kavg-perm_diff_score.", ANALYSIS, ".csv")), row.names = 1)
+# k_avg_perm_zscore <- read.csv(file = file.path(DIR_OUT, paste0("nbs_cluster_kavg-perm_zscore.", ANALYSIS, ".csv")), row.names = 1)
 
-write.csv(avgk_df_perm_avg, file = file.path(DIR_OUT, "nbs_cluster_kavg-perm_avg.baseline.csv"), row.names = T)
-write.csv(avgk_df_perm_sd, file = file.path(DIR_OUT, "nbs_cluster_kavg-perm_sd.baseline.csv"), row.names = T)
-write.csv(avgk_df_perm_me, file = file.path(DIR_OUT, "nbs_cluster_kavg-perm_me.baseline.csv"), row.names = T)
-write.csv(k_avg_perm_diff, file = file.path(DIR_OUT, "nbs_cluster_kavg-perm_diff_score.baseline.csv"), row.names = T)
-write.csv(k_avg_perm_zscore, file = file.path(DIR_OUT, "nbs_cluster_kavg-perm_zscore.baseline.csv"), row.names = T)
-
-
-#' Plot summary stats
+# ===================================
+#' PLOT SUMMARY STATS
+#' 
 #' kavg diff column
 summary_df_kavg_diff <- as.data.frame(t(do.call(cbind, lapply(k_avg_perm_diff, summary))))
 summary_df_kavg_diff$cluster <- paste0("C", as.character(sub(pattern = "kavg_cluster_", "", rownames(summary_df_kavg_diff))))
@@ -262,8 +319,8 @@ p2 <- ggplot(summary_df_kavg_diff, aes(x=reorder(cluster, Mean), y=Mean)) +
   theme_classic()
 
 p <- p1 + p2 + plot_annotation(title = '<k> obs-exp difference') & theme(plot.title = element_text(hjust=0.5));p
-pdf(file.path(DIR_OUT, "../figures", paste0("nbs_cluster_kavg-perm_diff_stats.baseline.pdf")), width = 4, height = 3.5, useDingbats = F);p;dev.off()
-png(file.path(DIR_OUT, "../figures", paste0("nbs_cluster_kavg-perm_diff_stats.baseline.png")), width = 4*300, height = 3.5*300, res=300);p;dev.off()
+pdf(file.path(DIR_OUT, "../figures", paste0("nbs_cluster_kavg-perm_diff_stats.", ANALYSIS, ".pdf")), width = 4, height = 3.5, useDingbats = F);p;dev.off()
+# png(file.path(DIR_OUT, "../figures", paste0("nbs_cluster_kavg-perm_diff_stats.", ANALYSIS, ".png")), width = 4*300, height = 3.5*300, res=300);p;dev.off()
 
 
 #' kavg diff box plot
@@ -288,11 +345,8 @@ p4 <- ggplot(df_kavg_diff_long, aes(x=reorder(cluster, value), y=value)) +
   coord_flip() +
   theme_classic();p4
 
-pdf(file.path(DIR_OUT, "../figures", paste0("nbs_cluster_kavg-perm_diff_boxplot.baseline.pdf")), width = 2.5, height = 3.5, useDingbats = F);p3;dev.off()
-png(file.path(DIR_OUT, "../figures", paste0("nbs_cluster_kavg-perm_diff_boxplot.baseline.png")), width = 2.5*300, height = 3.5*300, res=300);p3;dev.off()
-# cairo_ps(filename = file.path(DIR_OUT, "../figures", paste0("nbs_cluster_kavg-perm_diff_boxplot.baseline.eps")), width = 2.5, height = 3.5);p3;dev.off()
-
-pdf(file.path(DIR_OUT, "../figures", paste0("nbs_cluster_kavg-perm_diff_boxplot2.baseline.pdf")), width = 2.5, height = 3.5, useDingbats = F);p4;dev.off()
+pdf(file.path(DIR_OUT, "../figures", paste0("nbs_cluster_kavg-perm_diff_boxplot.", ANALYSIS, ".pdf")), width = 2.5, height = 3.5, useDingbats = F);p3;dev.off()
+pdf(file.path(DIR_OUT, "../figures", paste0("nbs_cluster_kavg-perm_diff_barplot.", ANALYSIS, ".pdf")), width = 2.5, height = 3.5, useDingbats = F);p4;dev.off()
 
 
 #' kavg zscore column plot 
@@ -312,8 +366,8 @@ p2 <- ggplot(summary_df_kavg_zscore, aes(x=reorder(cluster, Mean), y=Mean)) +
   theme_classic()
 
 p <- p1+p2 + plot_annotation(title = '<k> obs-exp z-score') & theme(plot.title = element_text(hjust=0.5));p
-pdf(file.path(DIR_OUT, "../figures", paste0("nbs_cluster_kavg-perm_zscore_stats.baseline.pdf")), width = 4, height = 3.5, useDingbats = F);p;dev.off()
-png(file.path(DIR_OUT, "../figures", paste0("nbs_cluster_kavg-perm_zscore_stats.baseline.png")), width = 4*300, height = 3.5*300, res=300);p;dev.off()
+pdf(file.path(DIR_OUT, "../figures", paste0("nbs_cluster_kavg-perm_zscore_stats.", ANALYSIS, ".pdf")), width = 4, height = 3.5, useDingbats = F);p;dev.off()
+# png(file.path(DIR_OUT, "../figures", paste0("nbs_cluster_kavg-perm_zscore_stats.", ANALYSIS, ".png")), width = 4*300, height = 3.5*300, res=300);p;dev.off()
 
 
 
@@ -328,15 +382,13 @@ p1 <- ggplot(df_kavg_zscore_long, aes(x=reorder(cluster, value), y=value)) +
   geom_point(color=color_low2, size=.5) +
   labs(x="", y="z-score", title="<k> obs-exp diff.") +
   coord_flip() +
-  theme_classic();p1
+  theme_classic()
+pdf(file.path(DIR_OUT, "../figures", paste0("nbs_cluster_kavg-perm_zscore_boxplot.", ANALYSIS, ".pdf")), width = 3, height = 3.5, useDingbats = F);p1;dev.off()
 
 
-pdf(file.path(DIR_OUT, "../figures", paste0("nbs_cluster_kavg-perm_zscore_boxplot.baseline.pdf")), width = 3, height = 3.5, useDingbats = F);p1;dev.off()
-png(file.path(DIR_OUT, "../figures", paste0("nbs_cluster_kavg-perm_zscore_boxplot.baseline.png")), width = 3*300, height = 3.5*300, res=300);p1;dev.off()
-
-
-#####
-#' Plot network for figure schematic
+# ===================================
+#' EXTRA PLOTS
+#' Plot network for figure schematic:
 
 # OBSERVED
 for(cluster_view in c("6")){
@@ -354,9 +406,10 @@ for(cluster_view in c("6")){
     print(p_ob)
   }
 }
-pdf(file.path(DIR_OUT, "../figures", paste0("nbs_cluster_k.spatial_observed_example.baseline.pdf")), width = 3, height = 3.5, useDingbats = F);p_ob;dev.off()
+pdf(file.path(DIR_OUT, "../figures", paste0("nbs_cluster_k.spatial_observed_example.", ANALYSIS, ".pdf")), width = 3, height = 3.5, useDingbats = F);p_ob;dev.off()
 
 
+# ===================================
 # PERMUTED
 se.object <- se
 se_metadata <- se.object@meta.data[, c("seurat_clusters", "sample_id")]
@@ -395,7 +448,7 @@ for(rand_seed in 1:3){
       print(p_perm)
     }
   }
-  pdf(file.path(DIR_OUT, "../figures", paste0("nbs_cluster_k.spatial_permuted_example_seed", rand_seed, ".baseline.pdf")), width = 3, height = 3.5, useDingbats = F);print(p_perm);dev.off()
+  pdf(file.path(DIR_OUT, "../figures", paste0("nbs_cluster_k.spatial_permuted_example_seed", rand_seed, ".", ANALYSIS, ".pdf")), width = 3, height = 3.5, useDingbats = F);print(p_perm);dev.off()
 }
 
 
