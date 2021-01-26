@@ -1,6 +1,13 @@
+########################
 #' Cluster neighbourhood analysis
-#' Idnetify cluster neighbours and plot as graph 
+#' Identify cluster-cluster neighbours. Visualize adjacency matrices as graphs and heatmaps. 
+#' 
+#' L. Franzén, lovisa.franzen@scilifelab.se
+#' Jan 2020
+########################
 
+# ===================================
+#' SET UP
 library(ggplot2)
 library(magrittr)
 library(STutility)
@@ -11,6 +18,9 @@ library(ggnet)
 library(network)
 library(sna)
 library(ggraph)
+
+library(pheatmap)
+library(scico)
 
 
 PROJECT_ID <- "visium"
@@ -59,10 +69,18 @@ if(ANALYSIS=="baseline"){
 
 #####
 #' Define functions
+
+#' Create Adjacency Matrix
+#' 
+#' @param nbs.df Data frame with output from STUtility::GetSpatNet() data for all clusters of interest. Rows should correspond to spot ID and columns should include cluster IDs as well as colums starting with "nbs_".
+#' @param column.clusters.id Column name in nbs.df corresponding to cluster ID of the spots. Default "seurat_clusters".
+#' @param cluster.include Vector of cluster IDs to include in your analysis.
+#' @return Adjacency matrix with number of neighbours present between each cluster pair
+#' @export
 CreateAdjMatrix <- function(
   nbs.df,
-  cluster.include,
-  column.clusters.id = "seurat_clusters"
+  column.clusters.id = "seurat_clusters",
+  cluster.include
   ){
   nbs_adjmat <- matrix(0L, nrow = length(cluster.include), ncol = length(cluster.include))
   for (i in seq_along(cluster.include)) {
@@ -85,18 +103,27 @@ CreateAdjMatrix <- function(
   return(nbs_adjmat)
 }
 
+#' Create Adjacency Matrix per Subject
+#' 
+#' @param nbs.df Data frame with output from STUtility::GetSpatNet() data for all clusters of interest. Rows should correspond to spot ID and columns should include cluster IDs as well as colums starting with "nbs_".
+#' @param se.metadata Metadata dataframe from seurat object containing Sample IDs for each spot.
+#' @param column.clusters.id Column name in nbs.df corresponding to cluster ID of the spots. Default "seurat_clusters".
+#' @param cluster.include Vector of cluster IDs to include in your analysis.
+#' @param column.subject.id Column name in se.metadata corresponding to Sample ID of the spots.
+#' @return List of adjacency matrices with number of neighbours present between each cluster pair. Each matrix in the list corresponds to data from one sample.
+#' @export
 CreateAdjMatrixPerSubject <- function(
   nbs.df,
   se.metadata,
-  cluster.include,
   column.clusters.id = "seurat_clusters",
+  cluster.include,
   column.subject.id
 ){
   nbs_adjmat_list <- list()
   subjects_include <- unique(as.character(se.metadata[, column.subject.id]))
   
   for(subject_id in subjects_include){
-    rows_subject <- rownames(se.metadata[column.subject.id==subject_id, ])
+    rows_subject <- rownames(se.metadata[se.metadata[,column.subject.id] %in% subject_id, ])
     nbs.df_subject <- nbs.df[rows_subject, ]
     
     nbs_adjmat <- CreateAdjMatrix(nbs.df = nbs.df_subject, 
@@ -109,26 +136,23 @@ CreateAdjMatrixPerSubject <- function(
   return(nbs_adjmat_list)
 }
 
-minmax_norm <- function(x) {
-  return ((x - min(x)) / (max(x) - min(x)))
-}
-
-
-#####
-#' Expected values: RegionNeighbours() with permuted cluster IDs for each sample
+#' Randomise Cluster IDs within Subject data
+#' 
+#' @param se.object Seurat (STUtility) object containing cluster and sample identities for each spot in the metadata.
+#' @param column.clusters.id Column name in metadata corresponding to cluster ID of the spots. Default "seurat_clusters".
+#' @param column.subject.id Column name in metadata corresponding to Sample ID of the spots.
+#' @return New Seurat object with shuffled cluster identities per sample
+#' @export
 RandomiseClusteringIDs <- function (
   se.object,
   column.cluster.id,
   column.sample.id,
   random.seed = NA
-  ) {
+) {
   if(!is.na(random.seed)){
     message(paste("Setting random seed to", random.seed))
     set.seed(random.seed)
   }
-  # else {
-  #   rm(.Random.seed, envir=globalenv())
-  # }
   
   #' Shuffle cluster ids for each sample
   se_metadata <- se.object@meta.data[, c(column.cluster.id, column.sample.id)]
@@ -141,11 +165,18 @@ RandomiseClusteringIDs <- function (
   
   #' Add shuffled clusters to se object metadata
   se.object <- AddMetaData(se.object, as.character(se_metadata_perm$clusters_perm), col.name = "clusters_perm")
-
+  
   return(se.object)
 }
 
-n_perm <- 50  # 10
+minmax_norm <- function(x) {
+  return ((x - min(x)) / (max(x) - min(x)))
+}
+
+
+#####
+#' "EXPECTED" VALUES: RegionNeighbours() with permuted cluster IDs for each sample
+n_perm <- 50
 perm_adj_mat_list <- list()
 for(i in 1:n_perm){
   se <- RandomiseClusteringIDs(se.object = se, column.cluster.id = "seurat_clusters", column.sample.id = "sample_id", random.seed = i)
@@ -186,8 +217,9 @@ ggplot(subset(perm_adj_mat_df_long, variable %in% paste0("X", 1:18)), aes(x=vari
   facet_wrap(~variable, scales = "free", ncol = 6)
 dev.off()
 
+
 #####
-#' Observed values: Run RegionNeighbours()
+#' OBSERVED VALUES: Run RegionNeighbours()
 se <- SetIdent(se, value = "seurat_clusters")
 for(column_rm in grep(pattern = "nbs", colnames(se[[]]), value = T)){
   se[[column_rm]] <- NULL
@@ -220,6 +252,7 @@ nbs_adjmat <- CreateAdjMatrix(nbs.df = nbs_df,
                               )
 
 
+#' Normalize method 1
 nbs_adjmat_norm <- nbs_adjmat
 for (i in seq(1:dim(nbs_adjmat_norm)[1])) {
   for (j in seq(1:dim(nbs_adjmat_norm)[1])) {
@@ -231,12 +264,10 @@ for (i in seq(1:dim(nbs_adjmat_norm)[1])) {
 }
 
 
-#' "Normalize"/Standardise using permuted values
+#' "Normalize"/Standardise method 2: Using permuted values
 nbs_adjmat_permscore <- round( ((nbs_adjmat - perm_adj_mat_avg) / perm_adj_mat_sd) , digits = 3)
 diag(nbs_adjmat_permscore) <- diag(nbs_adjmat)
 
-# nbs_adjmat_permscore2 <- round((nbs_adjmat_permscore / perm_adj_mat_sd), digits = 3 )
-# diag(nbs_adjmat_permscore2) <- diag(nbs_adjmat)
 
 #' Set row/column names
 rownames(nbs_adjmat) <- rownames(nbs_adjmat_norm) <- rownames(nbs_adjmat_permscore) <- paste0("C", c_include)
@@ -244,14 +275,99 @@ colnames(nbs_adjmat) <- colnames(nbs_adjmat_norm) <- colnames(nbs_adjmat_permsco
 
 rownames(perm_adj_mat_avg) <- rownames(perm_adj_mat_sd) <- colnames(perm_adj_mat_avg) <- colnames(perm_adj_mat_sd) <- paste0("C", c_include)
 
-#' Save tables
-# write.table(nbs_adjmat, file.path(DIR_RES, "tables", paste0("nbs_adj_matrix.", ANALYSIS, ".tsv")), quote = F, sep = "\t", row.names = T, col.names = T)
-# write.table(nbs_adjmat_norm, file.path(DIR_RES, "tables", paste0("nbs_adj_matrix_norm.", ANALYSIS, ".tsv")), quote = F, sep = "\t", row.names = T, col.names = T)
-# write.table(nbs_adjmat_permscore, file.path(DIR_RES, "tables", paste0("nbs_adj_matrix_permscore.", ANALYSIS, ".tsv")), quote = F, sep = "\t", row.names = T, col.names = T)
-# 
-# write.table(perm_adj_mat_avg, file.path(DIR_RES, "tables", paste0("nbs_adj_matrix_perm_avg.", ANALYSIS, ".tsv")), quote = F, sep = "\t", row.names = T, col.names = T)
-# write.table(perm_adj_mat_sd, file.path(DIR_RES, "tables", paste0("nbs_adj_matrix_perm_sd.", ANALYSIS, ".tsv")), quote = F, sep = "\t", row.names = T, col.names = T)
 
+#' Save tables
+write.table(nbs_adjmat, file.path(DIR_RES, "tables", paste0("nbs_adj_matrix.", ANALYSIS, ".tsv")), quote = F, sep = "\t", row.names = T, col.names = T)
+write.table(nbs_adjmat_norm, file.path(DIR_RES, "tables", paste0("nbs_adj_matrix_norm.", ANALYSIS, ".tsv")), quote = F, sep = "\t", row.names = T, col.names = T)
+write.table(nbs_adjmat_permscore, file.path(DIR_RES, "tables", paste0("nbs_adj_matrix_permscore.", ANALYSIS, ".tsv")), quote = F, sep = "\t", row.names = T, col.names = T)
+
+write.table(perm_adj_mat_avg, file.path(DIR_RES, "tables", paste0("nbs_adj_matrix_perm_avg.", ANALYSIS, ".tsv")), quote = F, sep = "\t", row.names = T, col.names = T)
+write.table(perm_adj_mat_sd, file.path(DIR_RES, "tables", paste0("nbs_adj_matrix_perm_sd.", ANALYSIS, ".tsv")), quote = F, sep = "\t", row.names = T, col.names = T)
+
+
+
+#####
+#' PER SUBJECT, OBSERVED VALUES
+
+#' Adjacency matrix
+nbs_adjmat_list_subject <- CreateAdjMatrixPerSubject(nbs.df = nbs_df, 
+                                                     se.metadata = se@meta.data,
+                                                     column.subject.id = "subject_id",
+                                                     cluster.include = c_include, 
+                                                     column.clusters.id = "seurat_clusters"
+                                                     )
+
+#' PER SUBJECT, EXPECTED VALUES
+n_perm <- 50
+perm_adj_mat_list_subject <- list()
+for(i in 1:n_perm){
+  se <- RandomiseClusteringIDs(se.object = se, column.cluster.id = "seurat_clusters", column.sample.id = "sample_id", random.seed = i)
+  se <- SetIdent(se, value = "clusters_perm")
+  for(column_rm in grep(pattern = "nbs_", colnames(se[[]]), value = T)){
+    se[[column_rm]] <- NULL
+  }
+  for(c in c_include){
+    se <- RegionNeighbours(se, id = c, keep.within.id = T, verbose = TRUE)
+  }
+  perm_nbs_df <- se[[]][, c("clusters_perm", grep(pattern = "nbs_", colnames(se[[]]), value = T))]
+  perm_adj_mat_list_subject <- CreateAdjMatrixPerSubject(nbs.df = perm_nbs_df, 
+                                                         se.metadata = se@meta.data, 
+                                                         cluster.include = c_include, 
+                                                         column.clusters.id = "clusters_perm", 
+                                                         column.subject.id = "subject_id")
+  perm_adj_mat_list_subject[[i]] <- perm_adj_mat_list_subject
+}
+
+
+n_cols <- dim(perm_adj_mat_list[[1]][[1]])[1]
+perm_adj_mat_avg_list_subject <- perm_adj_mat_sd_list_subject <- list()
+perm_adj_mat_avg_subject <- perm_adj_mat_sd_subject <- matrix(0L, nrow = n_cols, ncol = n_cols)
+for (subject_id in names(perm_adj_mat_list[[1]])) {
+  perm_adj_mat_list_subject_id <- list()
+  for (i in 1:length(perm_adj_mat_list)) {
+    perm_adj_mat_list_subject_id[[i]] <- perm_adj_mat_list[[i]][[subject_id]]
+  }
+  for (i in 1:n_cols) {
+    for (j in 1:n_cols) {
+      list_ij <- c()
+      for (list_n in 1:length(perm_adj_mat_list_subject_id)) {
+        list_ij <- c(list_ij, perm_adj_mat_list_subject_id[[list_n]][i,j])
+      }
+      perm_adj_mat_avg_subject[i,j] <- mean(list_ij)
+      perm_adj_mat_sd_subject[i,j] <- sd(list_ij)
+    }
+    perm_adj_mat_avg_list_subject[[subject_id]] <- perm_adj_mat_avg_subject
+    perm_adj_mat_sd_list_subject[[subject_id]] <- perm_adj_mat_sd_subject
+  }
+}
+
+
+#' PER SUBJECT, OBS - EXP_AVG
+nbs_adjmat_permscore_subject <- list()
+for (subject_id in names(nbs_adjmat_list_subject)) {
+  nbs_adjmat_permscore_subject[[subject_id]] <- round( (nbs_adjmat_list_subject[[subject_id]] - perm_adj_mat_avg_list_subject[[subject_id]]) / perm_adj_mat_sd_list_subject[[subject_id]], digits = 3)
+  diag(nbs_adjmat_permscore_subject[[subject_id]]) <- diag(nbs_adjmat_list_subject[[subject_id]])
+
+  #' Set row/column names
+  rownames(nbs_adjmat_permscore_subject[[subject_id]]) <- colnames(nbs_adjmat_permscore_subject[[subject_id]]) <- paste0("C", c_include)
+}
+
+
+#' Save tables
+for (subject_id in names(nbs_adjmat_permscore_subject)) {
+  write.table(nbs_adjmat_permscore_subject[[subject_id]], 
+              file.path(DIR_RES, "tables/nbs_kavg_subjects", paste0("nbs_adj_matrix_permscore_subject-", subject_id, ".", ANALYSIS, ".tsv")), 
+              quote = F, sep = "\t", row.names = T, col.names = T)
+  write.table(nbs_adjmat_list_subject[[subject_id]], 
+              file.path(DIR_RES, "tables/nbs_kavg_subjects", paste0("nbs_adj_matrix_subject-", subject_id, ".", ANALYSIS, ".tsv")), 
+              quote = F, sep = "\t", row.names = T, col.names = T)
+  write.table(perm_adj_mat_avg_list_subject[[subject_id]], 
+              file.path(DIR_RES, "tables/nbs_kavg_subjects", paste0("nbs_adj_matrix_perm_avg_subject-", subject_id, ".", ANALYSIS, ".tsv")), 
+              quote = F, sep = "\t", row.names = T, col.names = T)
+  write.table(perm_adj_mat_sd_list_subject[[subject_id]], 
+              file.path(DIR_RES, "tables/nbs_kavg_subjects", paste0("nbs_adj_matrix_perm_sd_subject-", subject_id, ".", ANALYSIS, ".tsv")), 
+              quote = F, sep = "\t", row.names = T, col.names = T)
+}
 
 # ===================================
 #' PLOTS
@@ -285,7 +401,7 @@ E(g2)$width <- E(g2)$weight*1.5
 
 #' plot 1.1
 fname <- paste0("nbs_analysis.graph.", ANALYSIS)
-pdf(file = file.path(DIR_FIG, paste0(fname, ".pdf")), width = 5.5, height = 5.5)
+pdf(file = file.path(DIR_FIG, paste0(fname, ".pdf")), width = 5.5, height = 5.5, useDingbats = F)
 plot(g2, 
      layout=layout_in_circle,
      vertex.label.family = "Helvetica", vertex.label.color = "black", vertex.label.cex = 1.5,
@@ -316,7 +432,7 @@ dev.off()
 
 #' plot 1.2
 fname <- paste0("nbs_analysis.graph2.", ANALYSIS)
-pdf(file = file.path(DIR_FIG, paste0(fname, ".pdf")), width = 5.5, height = 5.5)
+pdf(file = file.path(DIR_FIG, paste0(fname, ".pdf")), width = 5.5, height = 5.5, useDingbats = F)
 for(cluster_plot in names(e_sum)){
   e_pairs <- c()
   for(c in names(e_sum)[!names(e_sum)==cluster_plot]){
@@ -345,7 +461,7 @@ dev.off()
 
 #' plot 1.3
 fname <- paste0("nbs_analysis.graph3.", ANALYSIS)
-pdf(file = file.path(DIR_FIG, paste0(fname, ".pdf")), width = 5.5, height = 5.5)
+pdf(file = file.path(DIR_FIG, paste0(fname, ".pdf")), width = 5.5, height = 5.5, useDingbats = F)
 g3 <- g2
 for(cluster_plot in names(e_sum)){
   e_pairs <- c()
@@ -444,7 +560,7 @@ E(g2)$width <- (E(g2)$weight+0.1)*14
 
 
 fname <- paste0("nbs_analysis.permscore.", ANALYSIS)
-pdf(file = file.path(DIR_FIG, paste0(fname, ".pdf")), width = 5.5, height = 5.5)
+pdf(file = file.path(DIR_FIG, paste0(fname, ".pdf")), width = 5.5, height = 5.5, useDingbats = F)
 for(cluster_plot in names(e_sum)){
   e_pairs <- c()
   for(c in names(e_sum)[!names(e_sum)==cluster_plot]){
@@ -476,6 +592,11 @@ for(cluster_plot in names(e_sum)){
 dev.off()
 
 
+#' Export tables for plots
+write.csv(g_df_norm, file.path(DIR_RES, "tables", paste0("nbs_graph_df_norm.", ANALYSIS, ".csv")), quote = F, row.names = F)
+write.csv(g_df_permscore, file.path(DIR_RES, "tables", paste0("nbs_graph_df_permscore.", ANALYSIS, ".csv")), quote = F, row.names = F)
+
+
 #' PLOT HEATMAP
 library(pheatmap)
 library(scico)
@@ -491,29 +612,38 @@ hm_colour = list(
   group = c()
 )
 
-breaksList <- seq(-6, 6, by = 1)
+breaksList <- seq(-6, 6, by = .5)
 p1 <- pheatmap(hm_df,
               cluster_rows = F, cluster_cols = F,
               breaks = breaksList,
-              color = colorRampPalette(c(color_low2, "white", color_high))(length(breaksList)-1),
-              border_color = "white",
-              na_col = "white")
-p2 <- pheatmap(hm_df,
-              cluster_rows = F, cluster_cols = F,
-              breaks = breaksList,
-              color = (scico::scico(length(breaksList), palette = "vik")), #viridis::plasma(length(breaksList)),
+              color = colorRampPalette(c(color_low3, "white", color_high2))(length(breaksList)-1),
               border_color = "white",
               na_col = "white")
 
 fname1 <- paste0("nbs_analysis.permscore_hm.", ANALYSIS)
-pdf(file = file.path(DIR_FIG, paste0(fname1, ".pdf")), width = 5.5, height = 5);p1;dev.off()
-
-fname2 <- paste0("nbs_analysis.permscore_hm2.", ANALYSIS)
-pdf(file = file.path(DIR_FIG, paste0(fname2, ".pdf")), width = 5.5, height = 5);p2;dev.off()
+pdf(file = file.path(DIR_FIG, paste0(fname1, ".pdf")), width = 5.5, height = 5, useDingbats = F);p1;dev.off()
 
 
-#' Export tables
-write.csv(g_df_norm, file.path(DIR_RES, "tables", paste0("nbs_graph_df_norm.", ANALYSIS, ".csv")), quote = F, row.names = F)
-write.csv(g_df_permscore, file.path(DIR_RES, "tables", paste0("nbs_graph_df_permscore.", ANALYSIS, ".csv")), quote = F, row.names = F)
+#' PER SUBEJECT, PLOT HEATMAP
+fname <- paste0("nbs_analysis.permscore_subject_hm.", ANALYSIS)
+pdf(file = file.path(DIR_FIG, paste0(fname, ".pdf")), width = 5, height = 5, useDingbats = F)
+for (subject_id in names(nbs_adjmat_permscore_subject)) {
+  hm_df <- nbs_adjmat_permscore_subject[[subject_id]]
+  diag(hm_df) <- NA
+  hm_df[lower.tri(hm_df)] <- NA
+  hm_df[is.infinite(hm_df)] <- NA
+  breaksList <- seq(-6, 6, by = .5)
+  pheatmap(hm_df,
+           cluster_rows = F, 
+           cluster_cols = F,
+           breaks = breaksList,
+           color = colorRampPalette(c(color_low3, "white", color_high2))(length(breaksList)-1),
+           border_color = "white",
+           na_col = "grey80",
+           main  = subject_id)
+}
+dev.off()
 
 
+#===============
+sessionInfo()
