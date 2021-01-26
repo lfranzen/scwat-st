@@ -8,6 +8,12 @@
 
 # ===================================
 #' SET UP
+
+#' Select analysis:
+ANALYSIS <- "baseline"
+# ANALYSIS <- "insulin"
+
+#' Load libs
 library(ggplot2)
 library(magrittr)
 library(STutility)
@@ -23,6 +29,7 @@ library(pheatmap)
 library(scico)
 
 
+#' Define paths
 PROJECT_ID <- "visium"
 DIR_ROOT <- getwd()
 DIR_WD <- file.path(getwd(), "scripts")  # 
@@ -35,39 +42,35 @@ source(file.path(DIR_WD, "colors.R"))
 
 # ===================================
 #' READ DATA & LOAD IMGS
-#' 'Baseline' Visium data
-canno_base <- read.csv(file.path(DIR_RES, "tables", "visium_baseline.clustering_annotations.csv"), stringsAsFactors = F)
 
-se_base <- readRDS(file.path(DIR_RES, "se-object.visium_baseline.rds"))
-se_base <- LoadImages(se_base, time.resolve = T, verbose = T, xdim = 100)
-
-
-#' 'Insulin' Visium data
-canno_ins <- read.csv(file.path(DIR_RES, "tables", "visium_insulin.clustering_annotations.csv"), stringsAsFactors = F)
-
-se_ins <- readRDS(file.path(DIR_RES, "se-object.visium_insulin.rds"))
-se_ins <- LoadImages(se_ins, time.resolve = T, verbose = T, xdim = 100)
-
-
-# ===================================
-#' RUN NBS ANALYSIS
-
-ANALYSIS <- "baseline"
-# ANALYSIS <- "insulin"
-
-
-if(ANALYSIS=="baseline"){
+if (ANALYSIS=="baseline") {
+  #' 'Baseline' Visium data
+  canno_base <- read.csv(file.path(DIR_RES, "tables", "visium_baseline.clustering_annotations.csv"), stringsAsFactors = F)
+  se_base <- readRDS(file.path(DIR_RES, "se-object.visium_baseline.rds"))
+  se_base <- LoadImages(se_base, time.resolve = T, verbose = T, xdim = 100)
+  
   se <- se_base
   c_anno <- canno_base
   c_include <- seq(3, max(as.numeric(se[[]]$seurat_clusters)), 1)
-  } else if (ANALYSIS=="insulin") {
+  
+  rm(se_base)
+  
+} else if (ANALYSIS=="insulin") {
+  #' 'Insulin' Visium data
+  canno_ins <- read.csv(file.path(DIR_RES, "tables", "visium_insulin.clustering_annotations.csv"), stringsAsFactors = F)
+  se_ins <- readRDS(file.path(DIR_RES, "se-object.visium_insulin.rds"))
+  se_ins <- LoadImages(se_ins, time.resolve = T, verbose = T, xdim = 100)
+  
   se <- se_ins
+  se <- AddMetaData(se, metadata = paste0(se$subject_id, "_", se$insulin_stim), col.name = "subject_id")
   c_anno <- canno_ins
   c_include <- seq(4, max(as.numeric(se[[]]$seurat_clusters)), 1)
+  
+  rm(se_ins)
 }
 
 
-#####
+# ===================================
 #' Define functions
 
 #' Create Adjacency Matrix
@@ -174,7 +177,9 @@ minmax_norm <- function(x) {
 }
 
 
-#####
+# ===================================
+#' RUN NBS ANALYSIS
+#' 
 #' "EXPECTED" VALUES: RegionNeighbours() with permuted cluster IDs for each sample
 n_perm <- 50
 perm_adj_mat_list <- list()
@@ -310,22 +315,23 @@ for(i in 1:n_perm){
     se <- RegionNeighbours(se, id = c, keep.within.id = T, verbose = TRUE)
   }
   perm_nbs_df <- se[[]][, c("clusters_perm", grep(pattern = "nbs_", colnames(se[[]]), value = T))]
-  perm_adj_mat_list_subject <- CreateAdjMatrixPerSubject(nbs.df = perm_nbs_df, 
-                                                         se.metadata = se@meta.data, 
-                                                         cluster.include = c_include, 
-                                                         column.clusters.id = "clusters_perm", 
-                                                         column.subject.id = "subject_id")
-  perm_adj_mat_list_subject[[i]] <- perm_adj_mat_list_subject
+  perm_adj_mat_list_subject_id <- CreateAdjMatrixPerSubject(nbs.df = perm_nbs_df, 
+                                                           se.metadata = se@meta.data, 
+                                                           cluster.include = c_include, 
+                                                           column.clusters.id = "clusters_perm", 
+                                                           column.subject.id = "subject_id")
+  perm_adj_mat_list_subject[[i]] <- perm_adj_mat_list_subject_id
 }
 
 
-n_cols <- dim(perm_adj_mat_list[[1]][[1]])[1]
+n_cols <- dim(perm_adj_mat_list_subject[[1]][[1]])[1]
 perm_adj_mat_avg_list_subject <- perm_adj_mat_sd_list_subject <- list()
 perm_adj_mat_avg_subject <- perm_adj_mat_sd_subject <- matrix(0L, nrow = n_cols, ncol = n_cols)
-for (subject_id in names(perm_adj_mat_list[[1]])) {
+
+for (subject_id in names(perm_adj_mat_list_subject[[1]])) {
   perm_adj_mat_list_subject_id <- list()
-  for (i in 1:length(perm_adj_mat_list)) {
-    perm_adj_mat_list_subject_id[[i]] <- perm_adj_mat_list[[i]][[subject_id]]
+  for (i in 1:length(perm_adj_mat_list_subject)) {
+    perm_adj_mat_list_subject_id[[i]] <- perm_adj_mat_list_subject[[i]][[subject_id]]
   }
   for (i in 1:n_cols) {
     for (j in 1:n_cols) {
@@ -400,101 +406,101 @@ g2 <- set_edge_attr(g2, "weight", value=E(g)$weight)
 E(g2)$width <- E(g2)$weight*1.5
 
 #' plot 1.1
-fname <- paste0("nbs_analysis.graph.", ANALYSIS)
-pdf(file = file.path(DIR_FIG, paste0(fname, ".pdf")), width = 5.5, height = 5.5, useDingbats = F)
-plot(g2, 
-     layout=layout_in_circle,
-     vertex.label.family = "Helvetica", vertex.label.color = "black", vertex.label.cex = 1.5,
-     vertex.size = V(g2)$norm_size,
-     vertex.color = adjustcolor(V(g2)$color, alpha.f=.9),
-     vertex.frame.color="white",
-     edge.color = adjustcolor("grey70", alpha.f = .5),
-     edge.curved=0.1)
-
-for(cluster_plot in names(e_sum)){
-  e_pairs <- c()
-  for(c in names(e_sum)[!names(e_sum)==cluster_plot]){
-    e_pairs <- c(e_pairs, cluster_plot, c)
-  }
-  ecol <- rep("gray95", ecount(g2))
-  ecol[get.edge.ids(g, vp = e_pairs)] <- "gray20"
-  
-  plot(g2, 
-       layout=layout_in_circle,
-       vertex.label.family = "Helvetica", vertex.label.color = "black", vertex.label.cex = 1.5,
-       vertex.size = V(g2)$norm_size,
-       vertex.color = adjustcolor(V(g2)$color, alpha.f=.9),
-       vertex.frame.color="white",
-       edge.color = adjustcolor(ecol, alpha.f = .25),
-       edge.curved=0.1)
-}
-dev.off()
+# fname <- paste0("nbs_analysis.graph.", ANALYSIS)
+# pdf(file = file.path(DIR_FIG, paste0(fname, ".pdf")), width = 5.5, height = 5.5, useDingbats = F)
+# plot(g2, 
+#      layout=layout_in_circle,
+#      vertex.label.family = "Helvetica", vertex.label.color = "black", vertex.label.cex = 1.5,
+#      vertex.size = V(g2)$norm_size,
+#      vertex.color = adjustcolor(V(g2)$color, alpha.f=.9),
+#      vertex.frame.color="white",
+#      edge.color = adjustcolor("grey70", alpha.f = .5),
+#      edge.curved=0.1)
+# 
+# for(cluster_plot in names(e_sum)){
+#   e_pairs <- c()
+#   for(c in names(e_sum)[!names(e_sum)==cluster_plot]){
+#     e_pairs <- c(e_pairs, cluster_plot, c)
+#   }
+#   ecol <- rep("gray95", ecount(g2))
+#   ecol[get.edge.ids(g, vp = e_pairs)] <- "gray20"
+#   
+#   plot(g2, 
+#        layout=layout_in_circle,
+#        vertex.label.family = "Helvetica", vertex.label.color = "black", vertex.label.cex = 1.5,
+#        vertex.size = V(g2)$norm_size,
+#        vertex.color = adjustcolor(V(g2)$color, alpha.f=.9),
+#        vertex.frame.color="white",
+#        edge.color = adjustcolor(ecol, alpha.f = .25),
+#        edge.curved=0.1)
+# }
+# dev.off()
 
 #' plot 1.2
-fname <- paste0("nbs_analysis.graph2.", ANALYSIS)
-pdf(file = file.path(DIR_FIG, paste0(fname, ".pdf")), width = 5.5, height = 5.5, useDingbats = F)
-for(cluster_plot in names(e_sum)){
-  e_pairs <- c()
-  for(c in names(e_sum)[!names(e_sum)==cluster_plot]){
-    e_pairs <- c(e_pairs, cluster_plot, c)
-  }
-  ecol <- rep(NA, ecount(g2))
-  ecol[get.edge.ids(g, vp = e_pairs)] <- "gray50"
-  
-  node_ids <- names(V(g3))
-  node_sizes <- data.frame(node = node_ids,
-                           size = V(g3)$norm_size, 
-                           stringsAsFactors = F)
-  LS <- layout_as_star(g3, center = cluster_plot, order = order(node_sizes$size, decreasing = T))
-  
-  plot(g2, 
-       layout=LS,
-       vertex.label.family = "Helvetica", vertex.label.color = "black", vertex.label.cex = 1.5,
-       vertex.size = V(g2)$norm_size,
-       vertex.color = adjustcolor(V(g2)$color, alpha.f=.9),
-       vertex.frame.color="white",
-       edge.color = adjustcolor(ecol, alpha.f = .5),
-       edge.curved=0)
-}
-dev.off()
+# fname <- paste0("nbs_analysis.graph2.", ANALYSIS)
+# pdf(file = file.path(DIR_FIG, paste0(fname, ".pdf")), width = 5.5, height = 5.5, useDingbats = F)
+# for(cluster_plot in names(e_sum)){
+#   e_pairs <- c()
+#   for(c in names(e_sum)[!names(e_sum)==cluster_plot]){
+#     e_pairs <- c(e_pairs, cluster_plot, c)
+#   }
+#   ecol <- rep(NA, ecount(g2))
+#   ecol[get.edge.ids(g, vp = e_pairs)] <- "gray50"
+#   
+#   node_ids <- names(V(g3))
+#   node_sizes <- data.frame(node = node_ids,
+#                            size = V(g3)$norm_size, 
+#                            stringsAsFactors = F)
+#   LS <- layout_as_star(g3, center = cluster_plot, order = order(node_sizes$size, decreasing = T))
+#   
+#   plot(g2, 
+#        layout=LS,
+#        vertex.label.family = "Helvetica", vertex.label.color = "black", vertex.label.cex = 1.5,
+#        vertex.size = V(g2)$norm_size,
+#        vertex.color = adjustcolor(V(g2)$color, alpha.f=.9),
+#        vertex.frame.color="white",
+#        edge.color = adjustcolor(ecol, alpha.f = .5),
+#        edge.curved=0)
+# }
+# dev.off()
 
 
 #' plot 1.3
-fname <- paste0("nbs_analysis.graph3.", ANALYSIS)
-pdf(file = file.path(DIR_FIG, paste0(fname, ".pdf")), width = 5.5, height = 5.5, useDingbats = F)
-g3 <- g2
-for(cluster_plot in names(e_sum)){
-  e_pairs <- c()
-  for(c in names(e_sum)[!names(e_sum)==cluster_plot]){
-    e_pairs <- c(e_pairs, cluster_plot, c)
-  }
-  ecol <- rep(NA, ecount(g3))
-  ecol[get.edge.ids(g, vp = e_pairs)] <- "gray50"
-  
-  node_ids <- names(V(g3))
-  node_widths <- E(g3)$weight[get.edge.ids(g3, vp = e_pairs)]
-  node_sizes <- data.frame(node = node_ids,
-                           size = V(g3)$norm_size,
-                           stringsAsFactors = F)
-  node_sizes$width <- 0
-  node_sizes[node_sizes$node!=cluster_plot, "width"] <- node_widths
-  LS <- layout_as_star(g3, center = cluster_plot, order = order(node_sizes$width, decreasing = T))
-  
-  x <- E(g3)$weight[get.edge.ids(g3, vp = e_pairs)]
-  norm_x = (x-min(x))/(max(x)-min(x))
-  norm_x <- (norm_x+.1)*20
-  E(g3)$width[get.edge.ids(g3, vp = e_pairs)] <- norm_x
-  
-  plot(g3, 
-       layout=LS,
-       vertex.label.family = "Helvetica", vertex.label.color = "black", vertex.label.cex = 1.5,
-       vertex.size = V(g3)$norm_size,
-       vertex.color = adjustcolor(V(g3)$color, alpha.f=.9),
-       vertex.frame.color="white",
-       edge.color = adjustcolor(ecol, alpha.f = .5),
-       edge.curved=0)
-}
-dev.off()
+# fname <- paste0("nbs_analysis.graph3.", ANALYSIS)
+# pdf(file = file.path(DIR_FIG, paste0(fname, ".pdf")), width = 5.5, height = 5.5, useDingbats = F)
+# g3 <- g2
+# for(cluster_plot in names(e_sum)){
+#   e_pairs <- c()
+#   for(c in names(e_sum)[!names(e_sum)==cluster_plot]){
+#     e_pairs <- c(e_pairs, cluster_plot, c)
+#   }
+#   ecol <- rep(NA, ecount(g3))
+#   ecol[get.edge.ids(g, vp = e_pairs)] <- "gray50"
+#   
+#   node_ids <- names(V(g3))
+#   node_widths <- E(g3)$weight[get.edge.ids(g3, vp = e_pairs)]
+#   node_sizes <- data.frame(node = node_ids,
+#                            size = V(g3)$norm_size,
+#                            stringsAsFactors = F)
+#   node_sizes$width <- 0
+#   node_sizes[node_sizes$node!=cluster_plot, "width"] <- node_widths
+#   LS <- layout_as_star(g3, center = cluster_plot, order = order(node_sizes$width, decreasing = T))
+#   
+#   x <- E(g3)$weight[get.edge.ids(g3, vp = e_pairs)]
+#   norm_x = (x-min(x))/(max(x)-min(x))
+#   norm_x <- (norm_x+.1)*20
+#   E(g3)$width[get.edge.ids(g3, vp = e_pairs)] <- norm_x
+#   
+#   plot(g3, 
+#        layout=LS,
+#        vertex.label.family = "Helvetica", vertex.label.color = "black", vertex.label.cex = 1.5,
+#        vertex.size = V(g3)$norm_size,
+#        vertex.color = adjustcolor(V(g3)$color, alpha.f=.9),
+#        vertex.frame.color="white",
+#        edge.color = adjustcolor(ecol, alpha.f = .5),
+#        edge.curved=0)
+# }
+# dev.off()
 
 
 #' PLOT 2: cluster in center
@@ -569,8 +575,8 @@ for(cluster_plot in names(e_sum)){
   e_weights <- E(g)$weight
   ecol <- rep("grey90", ecount(g2))
   ecol[get.edge.ids(g2, vp = e_pairs)] <- "grey20"
-  ecol[e_weights>0 & ecol=="grey20"] <- color_high  # viridis::viridis(10)[6]
-  ecol[e_weights<0 & ecol=="grey20"] <- color_low2  # viridis::viridis(10)[2]
+  ecol[e_weights>0 & ecol=="grey20"] <- color_high
+  ecol[e_weights<0 & ecol=="grey20"] <- color_low2
   ecol[ecol=="grey90"] <- NA
   
   node_ids <- names(V(g2))
@@ -598,19 +604,10 @@ write.csv(g_df_permscore, file.path(DIR_RES, "tables", paste0("nbs_graph_df_perm
 
 
 #' PLOT HEATMAP
-library(pheatmap)
-library(scico)
-
 hm_df <- nbs_adjmat_permscore
 diag(hm_df) <- NA
 hm_df[lower.tri(hm_df)] <- NA
-
-hm_cluster_anno <- data.frame(row.names = paste0("C", c_anno$seurat_clusters),
-                              group = c_anno$cluster_group, stringsAsFactors = F)
-colors_group <- unique(c_anno$cluster_color)
-hm_colour = list(
-  group = c()
-)
+hm_df <- hm_df[,rev(colnames(hm_df))]
 
 breaksList <- seq(-6, 6, by = .5)
 p1 <- pheatmap(hm_df,
@@ -620,8 +617,8 @@ p1 <- pheatmap(hm_df,
               border_color = "white",
               na_col = "white")
 
-fname1 <- paste0("nbs_analysis.permscore_hm.", ANALYSIS)
-pdf(file = file.path(DIR_FIG, paste0(fname1, ".pdf")), width = 5.5, height = 5, useDingbats = F);p1;dev.off()
+fname <- paste0("nbs_analysis.permscore_hm.", ANALYSIS)
+pdf(file = file.path(DIR_FIG, paste0(fname, ".pdf")), width = 5, height = 4.8, useDingbats = F);p1;dev.off()
 
 
 #' PER SUBEJECT, PLOT HEATMAP
@@ -629,9 +626,11 @@ fname <- paste0("nbs_analysis.permscore_subject_hm.", ANALYSIS)
 pdf(file = file.path(DIR_FIG, paste0(fname, ".pdf")), width = 5, height = 5, useDingbats = F)
 for (subject_id in names(nbs_adjmat_permscore_subject)) {
   hm_df <- nbs_adjmat_permscore_subject[[subject_id]]
+  
   diag(hm_df) <- NA
   hm_df[lower.tri(hm_df)] <- NA
   hm_df[is.infinite(hm_df)] <- NA
+  hm_df <- hm_df[,rev(colnames(hm_df))]
   breaksList <- seq(-6, 6, by = .5)
   pheatmap(hm_df,
            cluster_rows = F, 
