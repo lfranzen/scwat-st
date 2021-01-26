@@ -1,5 +1,8 @@
 ########################
-#' Visium neighbourhood analysis of "self-clustering"
+#' Visium neighbourhood analysis of cluster community formation ("self-clustering") by computing average degree for each sample
+#' 
+#' L. Franzén, lovisa.franzen@scilifelab.se
+#' Jan 2020
 ########################
 
 #' Set up
@@ -47,8 +50,8 @@ colors_clusters <- se@meta.data[, c("seurat_clusters", "cluster_anno", "cluster_
   dplyr::distinct() %>%
   dplyr::arrange(seurat_clusters)
 
-pdf(file.path(DIR_OUT, "../figures", paste0("nbs_cluster_k.baseline2.pdf")), width = 12, height = 9)
-for(cluster_view in c("1", "3", "4", "6", "8", "16", "20")){
+pdf(file.path(DIR_OUT, "../figures", paste0("nbs_cluster_k.spatial.baseline.pdf")), width = 12, height = 9, useDingbats = F)
+for(cluster_view in c("1", "3", "4", "6", "8", "11", "16", "20")){
   spatnet.subset <- subset(spatnet, cluster_from %in% cluster_view)
   spatnet.subset_conly <- subset(spatnet.subset, cluster_to %in% cluster_view)
 
@@ -75,7 +78,7 @@ L <- sum(ki$ki)/2
 k_avg <- (2*L)/N
 
 
-#' Calculate avg degree for all samplse and clusters
+#' Calculate avg degree for all samples and clusters
 k_avg_list <- list()
 k_avg_df <- data.frame(row.names = paste0("S", seq(1,10)))
 
@@ -259,7 +262,7 @@ p2 <- ggplot(summary_df_kavg_diff, aes(x=reorder(cluster, Mean), y=Mean)) +
   theme_classic()
 
 p <- p1 + p2 + plot_annotation(title = '<k> obs-exp difference') & theme(plot.title = element_text(hjust=0.5));p
-pdf(file.path(DIR_OUT, "../figures", paste0("nbs_cluster_kavg-perm_diff_stats.baseline.pdf")), width = 4, height = 3.5);p;dev.off()
+pdf(file.path(DIR_OUT, "../figures", paste0("nbs_cluster_kavg-perm_diff_stats.baseline.pdf")), width = 4, height = 3.5, useDingbats = F);p;dev.off()
 png(file.path(DIR_OUT, "../figures", paste0("nbs_cluster_kavg-perm_diff_stats.baseline.png")), width = 4*300, height = 3.5*300, res=300);p;dev.off()
 
 
@@ -276,12 +279,23 @@ p3 <- ggplot(df_kavg_diff_long, aes(x=reorder(cluster, value), y=value)) +
   coord_flip() +
   theme_classic();p3
 
-pdf(file.path(DIR_OUT, "../figures", paste0("nbs_cluster_kavg-perm_diff_boxplot.baseline.pdf")), width = 3, height = 3.5);p3;dev.off()
-png(file.path(DIR_OUT, "../figures", paste0("nbs_cluster_kavg-perm_diff_boxplot.baseline.png")), width = 3*300, height = 3.5*300, res=300);p3;dev.off()
+p4 <- ggplot(df_kavg_diff_long, aes(x=reorder(cluster, value), y=value)) +
+  geom_col(data = summary_df_kavg_diff, aes(x=reorder(cluster, Mean), y=Mean), fill="white", color = "black", width = .8) +
+  geom_hline(yintercept = 0) +
+  # geom_boxplot() +
+  geom_point(color=color_low2, size=1) +
+  labs(x="", y="<k>", title="<k> obs-exp diff.") +
+  coord_flip() +
+  theme_classic();p4
+
+pdf(file.path(DIR_OUT, "../figures", paste0("nbs_cluster_kavg-perm_diff_boxplot.baseline.pdf")), width = 2.5, height = 3.5, useDingbats = F);p3;dev.off()
+png(file.path(DIR_OUT, "../figures", paste0("nbs_cluster_kavg-perm_diff_boxplot.baseline.png")), width = 2.5*300, height = 3.5*300, res=300);p3;dev.off()
+# cairo_ps(filename = file.path(DIR_OUT, "../figures", paste0("nbs_cluster_kavg-perm_diff_boxplot.baseline.eps")), width = 2.5, height = 3.5);p3;dev.off()
+
+pdf(file.path(DIR_OUT, "../figures", paste0("nbs_cluster_kavg-perm_diff_boxplot2.baseline.pdf")), width = 2.5, height = 3.5, useDingbats = F);p4;dev.off()
 
 
-
-#' kavg zscore column plot
+#' kavg zscore column plot 
 summary_df_kavg_zscore <- as.data.frame(t(do.call(cbind, lapply(k_avg_perm_zscore, summary))))
 summary_df_kavg_zscore$cluster <- paste0("C", as.character(sub(pattern = "kavg_cluster_", "", rownames(summary_df_kavg_zscore))))
 
@@ -298,7 +312,7 @@ p2 <- ggplot(summary_df_kavg_zscore, aes(x=reorder(cluster, Mean), y=Mean)) +
   theme_classic()
 
 p <- p1+p2 + plot_annotation(title = '<k> obs-exp z-score') & theme(plot.title = element_text(hjust=0.5));p
-pdf(file.path(DIR_OUT, "../figures", paste0("nbs_cluster_kavg-perm_zscore_stats.baseline.pdf")), width = 4, height = 3.5);p;dev.off()
+pdf(file.path(DIR_OUT, "../figures", paste0("nbs_cluster_kavg-perm_zscore_stats.baseline.pdf")), width = 4, height = 3.5, useDingbats = F);p;dev.off()
 png(file.path(DIR_OUT, "../figures", paste0("nbs_cluster_kavg-perm_zscore_stats.baseline.png")), width = 4*300, height = 3.5*300, res=300);p;dev.off()
 
 
@@ -317,11 +331,75 @@ p1 <- ggplot(df_kavg_zscore_long, aes(x=reorder(cluster, value), y=value)) +
   theme_classic();p1
 
 
-pdf(file.path(DIR_OUT, "../figures", paste0("nbs_cluster_kavg-perm_zscore_boxplot.baseline.pdf")), width = 3, height = 3.5);p1;dev.off()
+pdf(file.path(DIR_OUT, "../figures", paste0("nbs_cluster_kavg-perm_zscore_boxplot.baseline.pdf")), width = 3, height = 3.5, useDingbats = F);p1;dev.off()
 png(file.path(DIR_OUT, "../figures", paste0("nbs_cluster_kavg-perm_zscore_boxplot.baseline.png")), width = 3*300, height = 3.5*300, res=300);p1;dev.off()
 
 
 #####
+#' Plot network for figure schematic
+
+# OBSERVED
+for(cluster_view in c("6")){
+  for(sample_view in "4"){
+    spatnet.subset <- subset(spatnet, cluster_from %in% cluster_view & sample %in% sample_view)
+    spatnet.subset_conly <- subset(spatnet.subset, cluster_to %in% cluster_view & sample %in% sample_view)
+    
+    p_ob <- ggplot() +
+      geom_point(data = spatnet.subset, aes(start_x, -start_y, color = cluster_from), size = .5) +
+      geom_segment(data = spatnet.subset_conly, aes(x = start_x, xend = end_x, y = -start_y, yend = -end_y), size=0.3) +
+      labs(color="", title = paste("sample", sample_view, " - cluster", cluster_view)) +
+      scale_color_manual(values = colors_clusters[colors_clusters$seurat_clusters==cluster_view,"cluster_color"]) +
+      theme_void() +
+      NoLegend()
+    print(p_ob)
+  }
+}
+pdf(file.path(DIR_OUT, "../figures", paste0("nbs_cluster_k.spatial_observed_example.baseline.pdf")), width = 3, height = 3.5, useDingbats = F);p_ob;dev.off()
+
+
+# PERMUTED
+se.object <- se
+se_metadata <- se.object@meta.data[, c("seurat_clusters", "sample_id")]
+se_metadata$clusters_original <- se_metadata[, "seurat_clusters"]
+se_metadata$sample_id <- se_metadata[, "sample_id"]
+
+for(rand_seed in 1:3){
+  set.seed(seed = rand_seed)
+  se_metadata_perm <- se_metadata %>% 
+    dplyr::group_by(sample_id) %>% 
+    dplyr::mutate(clusters_perm = seurat_clusters[sample(dplyr::row_number())])
+  se.object <- AddMetaData(se.object, as.character(se_metadata_perm$clusters_perm), col.name = "clusters_perm")
+  
+  spatnet_perm <- do.call(rbind, lapply(seq_along(spatnet_init), function(i) {
+    spatnet_perm <- spatnet_init[[i]]
+    spatnet_perm$cluster_from <- se.object[[]][spatnet_perm$from, "clusters_perm"]
+    spatnet_perm$cluster_to <- se.object[[]][spatnet_perm$to, "clusters_perm"]
+    spatnet_perm$sample <- paste0(i)
+    return(spatnet_perm)
+  }))
+  spatnet_perm$cluster_from <- as.factor(as.numeric(spatnet_perm$cluster_from))
+  spatnet_perm$cluster_to <- as.factor(as.numeric(spatnet_perm$cluster_to))
+  
+  for(cluster_view in c("6")){
+    for(sample_view in "4"){
+      spatnet.subset <- subset(spatnet_perm, cluster_from %in% cluster_view & sample %in% sample_view)
+      spatnet.subset_conly <- subset(spatnet.subset, cluster_to %in% cluster_view & sample %in% sample_view)
+      
+      p_perm <- ggplot() +
+        geom_point(data = spatnet.subset, aes(start_x, -start_y, color = cluster_from), size = .5) +
+        geom_segment(data = spatnet.subset_conly, aes(x = start_x, xend = end_x, y = -start_y, yend = -end_y), size=0.3) +
+        labs(color="", title = paste("sample", sample_view, " - cluster", cluster_view)) +
+        scale_color_manual(values = colors_clusters[colors_clusters$seurat_clusters==cluster_view,"cluster_color"]) +
+        theme_void() +
+        NoLegend()
+      print(p_perm)
+    }
+  }
+  pdf(file.path(DIR_OUT, "../figures", paste0("nbs_cluster_k.spatial_permuted_example_seed", rand_seed, ".baseline.pdf")), width = 3, height = 3.5, useDingbats = F);print(p_perm);dev.off()
+}
+
+
+#===============
 sessionInfo()
 
 
