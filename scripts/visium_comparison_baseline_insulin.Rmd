@@ -1,0 +1,334 @@
+---
+title: "Visium data - Comparison of clustering oberlap between 'baseline' and 'insulin' analyses"
+author: "L. Franzén lovisa.franzen@scilifelab.se"
+date: '`r format(Sys.Date(), "%B %d, %Y")`'
+output: 
+  html_document:
+    theme: cosmo
+    highlight: tango
+    css: style.css
+    code_folding: "hide"
+    toc: true
+    toc_depth: 3
+    toc_float:
+      collapsed: false
+    number_sections: false
+    
+---
+
+***
+
+# Initialize  
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+	echo = TRUE,
+	message = FALSE,
+	warning = FALSE,
+	cache = F,
+	cache.lazy = FALSE
+)
+
+set.seed(42)
+
+#' Load libs
+
+library(Matrix)
+library(tidyr)
+library(ggplot2)
+library(RColorBrewer)
+library(ggrepel)
+library(cowplot)
+library(patchwork)
+library(ggpubr)
+library(writexl)
+library(Seurat)
+library(STutility)
+
+library(DT)
+library(knitr)
+
+
+#' Define analysis tag
+ANALYSIS_ID <- "visium_comparison"
+
+
+#' Define project paths
+PROJECT_ID <- "visium"
+DIR_WD <- getwd()
+DIR_ROOT <- file.path(getwd(), "..")  # 
+
+DIR_DATA <- file.path(DIR_ROOT, "data", PROJECT_ID)
+DIR_RES <- file.path(DIR_ROOT, "results" , PROJECT_ID)
+DIR_FIG <- file.path(DIR_RES, "figures")
+
+
+#' Colors
+source(file.path(DIR_WD, "colors.R"))
+
+#' Define custom functions
+'%!in%' <- function(x,y)!('%in%'(x,y));
+```
+
+
+<br><br> 
+
+## Load necessary files and tables  
+  
+  
+### Sample insulin cluster annotation table  
+
+```{r read_canno}
+canno_base <- read.csv(file.path(DIR_RES, "tables", "visium_baseline.clustering_annotations.csv"), stringsAsFactors = F)
+canno_ins <- read.csv(file.path(DIR_RES, "tables", "visium_insulin.clustering_annotations.csv"), stringsAsFactors = F)
+```
+  
+<br><br>
+
+### Seurat object  
+
+```{r read_seobjs}
+se_base <- readRDS(file.path(DIR_RES, "se-object.visium_baseline.rds"))
+se_ins <- readRDS(file.path(DIR_RES, "se-object.visium_insulin.rds"))
+
+#' minor formatting
+se_base <- AddMetaData(se_base, metadata = as.factor(as.numeric(as.character(se_base[[]][, "seurat_clusters"]))), col.name = "seurat_clusters_f" )
+```
+
+<br><br>
+
+***
+
+# Subset overlap
+
+```{r overlap_subset}
+tissue_id_keep <- c("NK50-before-A","NO148-before","NO137-before","NK49-before-B")
+
+se_compare <- subset(se_ins, tissue_id %in% tissue_id_keep)
+se_baseline_subset <- subset(se_base, tissue_id %in% tissue_id_keep)
+
+new_names <- data.frame(tissue_id = se_compare[[]]$tissue_id,
+                        barcodes_original = rownames(se_compare[[]]),
+                        apply(do.call(rbind, strsplit(rownames(se_compare[[]]), split = "_")), 2, as.character),
+                        stringsAsFactors = F)
+new_names_base <- data.frame(tissue_id = se_baseline_subset[[]]$tissue_id,
+                             barcodes_original = rownames(se_baseline_subset[[]]),
+                             apply(do.call(rbind, strsplit(rownames(se_baseline_subset[[]]), split = "_")), 2, as.character),
+                             stringsAsFactors = F)
+new_names$rep = 0
+new_names_base$rep = 0
+i=1
+for(s in tissue_id_keep) {
+  new_names[new_names$tissue_id == s, "rep"] <- i
+  new_names_base[new_names_base$tissue_id == s, "rep"] <- i
+  i = i+1
+}
+new_names$barcode_new <- paste(new_names$X1, new_names$rep, sep = "_")
+rownames(new_names) <- new_names$barcode_new
+new_names_base$barcode_new <- paste(new_names_base$X1, new_names_base$rep, sep = "_") 
+rownames(new_names_base) <- new_names_base$barcode_new
+new_names_base <- new_names_base[intersect(rownames(new_names), rownames(new_names_base)), ]
+
+se_baseline_subset <- SubsetSTData(se_baseline_subset, spots = new_names_base$barcodes_original)
+metadata_baseline <- se_baseline_subset[[]][new_names_base$barcodes_original, ]
+
+metadata_baseline$barcodes_original <- new_names_base$barcodes_original
+rownames(metadata_baseline) <- as.character(new_names_base$barcode_new)
+
+metadata_insulin <- se_compare[[]][new_names$barcodes_original, ]
+rownames(metadata_insulin) <- new_names$barcode_new
+```
+
+
+Number of spots in overlapping data:
+```{r view_metadata_dim}
+dim(metadata_baseline)
+dim(metadata_insulin)
+```
+
+
+Overlapping samples:
+```{r check_subset}
+unique(se_compare$subject_id)
+unique(se_compare$tissue_id)
+
+unique(se_compare$sample_id)
+unique(se_compare$novaseq_id)
+```
+
+```{r prep_overlap_df}
+row_overlap <- intersect(rownames(metadata_baseline), rownames(metadata_insulin))
+metadata_baseline <- metadata_baseline[row_overlap, ]
+metadata_insulin <- metadata_insulin[row_overlap, ]
+
+cluster_res <- "seurat_clusters" # "SCT_snn_res.0.7"
+
+cluster_comparison <- data.frame(cluster_baseline = as.factor(as.numeric(as.character(metadata_baseline$seurat_clusters))),
+                                 cluster_insulin = as.factor(as.numeric(as.character(metadata_insulin[, cluster_res]))),
+                                 metadata_baseline[, colnames(metadata_baseline)[c(2:23, 36, 45:48)]], 
+                                 stringsAsFactors = F)
+
+# se_compare <- AddMetaData(se_compare, metadata = metadata_baseline$seurat_clusters_f, col.name = "cluster_baseline")
+```
+<br><br>
+
+# Quantify overlap
+
+## All four subjects pooled  
+
+```{r compare_clusters}
+d_plot <- cluster_comparison %>%
+  group_by(cluster_insulin, cluster_baseline) %>%  #tissue_id, 
+  dplyr::count()
+
+datatable(d_plot, rownames = F)
+```
+
+```{r compare_clusters_plot_pct, fig.width=12, fig.height=6}
+p1 <- ggplot(d_plot, 
+             aes(x = cluster_insulin, y = n, fill = cluster_baseline)) +
+  geom_bar(stat = 'identity', color=NA, position = "fill") + # position:"fill" (pct) or "stack" (count)
+  scale_fill_manual(values = canno_base[order(canno_base$seurat_clusters), "cluster_color"]) +
+  theme_classic() +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1),  legend.position = "top")
+
+
+p2 <- ggplot(d_plot, 
+             aes(x = cluster_baseline, y = n, fill = cluster_insulin)) +
+  geom_bar(stat = 'identity', color=NA, position = "fill") + # position:"fill" (pct) or "stack" (count)
+  scale_fill_manual(values = canno_ins[order(canno_ins$seurat_clusters), "cluster_color"]) +
+  theme_classic() +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1), legend.position = "top")
+
+p1 + p2
+```
+<br><br>
+
+## Per subject  
+
+```{r compare_clusters_subject}
+d_plot_sub <- cluster_comparison %>%
+  group_by(cluster_insulin, cluster_baseline, subject_id) %>%  #tissue_id, 
+  dplyr::count()
+
+datatable(d_plot_sub, rownames = F)
+```
+
+<br><br>
+
+
+Percentage:  
+```{r compare_clusters_subject_plot_pct, fig.width=12, fig.height=8}
+p1 <- ggplot(d_plot_sub, 
+             aes(x = cluster_insulin, y = n, fill = cluster_baseline)) +
+  geom_bar(stat = 'identity', color=NA, position = "fill") + # position:"fill" (pct) or "stack" (count)
+  scale_fill_manual(values = canno_base[order(canno_base$seurat_clusters), "cluster_color"]) +
+  facet_wrap(~subject_id) +
+  theme_classic() +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1),  legend.position = "top");p1
+
+
+p2 <- ggplot(d_plot_sub, 
+             aes(x = cluster_baseline, y = n, fill = cluster_insulin)) +
+  geom_bar(stat = 'identity', color=NA, position = "fill") + # position:"fill" (pct) or "stack" (count)
+  scale_fill_manual(values = canno_ins[order(canno_ins$seurat_clusters), "cluster_color"]) +
+  facet_wrap(~subject_id) +
+  theme_classic() +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1), legend.position = "top");p2
+```
+<br><br>
+
+
+Raw spot count:  
+```{r compare_clusters_subject_plot_n, fig.width=12, fig.height=8}
+p1 <- ggplot(d_plot_sub, 
+             aes(x = cluster_insulin, y = n, fill = cluster_baseline)) +
+  geom_bar(stat = 'identity', color=NA, position = "stack") + # position:"fill" (pct) or "stack" (count)
+  scale_fill_manual(values = canno_base[order(canno_base$seurat_clusters), "cluster_color"]) +
+  scale_y_log10() +
+  facet_wrap(~subject_id) +
+  theme_classic() +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1),  legend.position = "top");p1
+
+
+p2 <- ggplot(d_plot_sub, 
+             aes(x = cluster_baseline, y = n, fill = cluster_insulin)) +
+  geom_bar(stat = 'identity', color=NA, position = "stack") + # position:"fill" (pct) or "stack" (count)
+  scale_fill_manual(values = canno_ins[order(canno_ins$seurat_clusters), "cluster_color"]) +
+  scale_y_log10() +
+  facet_wrap(~subject_id) +
+  theme_classic() +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1), legend.position = "top");p2
+```
+<br><br>
+
+
+## Export tables
+
+```{r export_tables}
+write.csv(d_plot, file = file.path(DIR_RES, "tables", "visium_comparison.baseline_insulin_cluster_overlap.csv"), row.names = F)
+write.csv(d_plot_sub, file = file.path(DIR_RES, "tables", "visium_comparison.baseline_insulin_cluster_overlap_subject.csv"), row.names = F)
+```
+<br><br>
+
+
+## Cluster correlation
+
+```{r cluster_corr}
+# library(corrplot)
+# library(ggcorrplot)
+library(pheatmap)
+
+clus_ins <- as.numeric(unique(d_plot$cluster_insulin))
+clus_base <- as.numeric(unique(d_plot$cluster_baseline))
+corr_df <- matrix(0, nrow = length(clus_ins), ncol = length(clus_base))
+
+for(ci in clus_ins) {
+  # print(paste("row:", r))
+  for(cb in clus_base) {
+    # print(paste("column:", c))
+    tmp <- subset(d_plot, cluster_insulin == as.character(ci) & cluster_baseline == as.character(cb))
+    # print(dim(tmp))
+    if(dim(tmp)[1] != 0) {
+      corr_df[ci, cb] <- tmp$n
+    }
+  }
+}
+```
+
+```{r cluster_corr_plot, fig.width=4.8, fig.height=4.4}
+rownames(corr_df) <- paste0("i_C", clus_ins)
+colnames(corr_df) <- paste0("b_C", clus_base)
+
+corr_df_pct <- corr_df
+for(r in 1:nrow(corr_df)) {
+  corr_df_pct[r, ] <-  round(corr_df[r, ] / (colSums(corr_df)+0.01), 2)
+}
+
+ph_col <- c("#ffffff", colorRampPalette(brewer.pal(9, "OrRd"))(20))
+pheatmap(corr_df_pct, 
+         color = ph_col, 
+         border_color = "grey80", 
+         cluster_cols = F,
+         cluster_rows = F,
+         main = "Cluster overlap (% of baseline spots)")
+```
+
+<br><br>
+
+***  
+
+# Wrap up
+
+<br><br>
+
+## Session information  
+  
+This analysis was last compiled on `r Sys.Date()`.  
+  
+<br>
+  
+```{r sessioninfo}
+sessionInfo()
+```
+
