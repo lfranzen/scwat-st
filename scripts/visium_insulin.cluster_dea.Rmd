@@ -1,0 +1,578 @@
+---
+title: "Visium data - 'Insulin' samples: Cluster DEA before/after insulin stimulation"
+author: "L. Franzén lovisa.franzen@scilifelab.se"
+date: '`r format(Sys.Date(), "%B %d, %Y")`'
+output: 
+  html_document:
+    theme: cosmo
+    highlight: tango
+    css: style.css
+    code_folding: "hide"
+    toc: true
+    toc_depth: 3
+    toc_float:
+      collapsed: false
+    number_sections: false
+    
+---
+
+***
+  
+# Description  
+  
+Aim with this analysis is to look at insulin responses in all clusters, not only adipocytes. Two approaches are used: 1) Seurat's FindMarkers() function on spot level with normalized expression data, and 2) DESeq2 on pooled raw counts for each cluster and individual, where the design is set up to find DEGs before/after insulin stimulation with subject as covariate (~ subject + insulin).  
+  
+<br>
+  
+***
+
+<br><br>  
+
+
+# Initialize  
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+	echo = TRUE,
+	message = FALSE,
+	warning = FALSE,
+	cache = T,
+	cache.lazy = FALSE
+)
+
+set.seed(42)
+
+#' Load libs
+library(Matrix)
+library(tidyr)
+library(ggplot2)
+library(RColorBrewer)
+library(ggrepel)
+library(cowplot)
+library(patchwork)
+library(ggpubr)
+
+library(Seurat)
+library(STutility)
+
+library(DESeq2)
+
+library(DT)
+library(knitr)
+
+
+#' Define analysis tag
+ANALYSIS_ID <- "visium_insulin"
+
+
+#' Define project paths
+PROJECT_ID <- "visium"
+DIR_WD <- getwd()
+DIR_ROOT <- file.path(getwd(), "..")  # 
+
+DIR_DATA <- file.path(DIR_ROOT, "data", PROJECT_ID)
+DIR_RES <- file.path(DIR_ROOT, "results" , PROJECT_ID)
+DIR_FIG <- file.path(DIR_RES, "figures")
+
+
+#' Colors
+source(file.path(DIR_WD, "colors.R"))
+
+#' Define custom functions
+'%!in%' <- function(x,y)!('%in%'(x,y));
+```
+
+
+<br><br> 
+
+## Load necessary files and tables  
+  
+  
+### Sample insulin cluster annotation table  
+
+```{r read_canno}
+c_anno <- read.csv(file.path(DIR_RES, "tables", "visium_insulin.clustering_annotations.csv"), stringsAsFactors = F)
+```
+<br><br>
+  
+### Metadata  
+
+```{r read_metadata}
+metadata <- read.table(file.path(DIR_DATA, "visium_sample_metadata.tsv"), sep = "\t", header = T, stringsAsFactors = F)
+metadata$bmi <- as.numeric(metadata$bmi)
+rownames(metadata) <- metadata$sample_name
+
+metadata_ins <- subset(metadata, insulin_stim == 0 | insulin_stim == 1)
+metadata_ins$subject_id_insulin <- paste0(metadata_ins$subject_id, "_", metadata_ins$insulin_stim)
+
+datatable(metadata_ins)
+```
+
+  
+<br><br>
+
+### Seurat object  
+
+```{r read_seobj}
+se <- readRDS(file.path(DIR_RES, "se-object.visium_insulin.rds"))
+se <- AddMetaData(se, paste0(se$subject_id, "_", se$insulin_stim), col.name = "subject_id_insulin")
+```
+
+<br><br>
+
+
+# Spot data (Seurat)
+  
+## FindMarkers  
+
+```{r clustercond_findmarkers}
+se$cluster_cond <- paste(se$seurat_clusters, se$insulin_stim, sep = "_")
+Idents(se) <- "cluster_cond"
+
+clustercond_markers <- list()
+for (c in seq_along(unique(se$seurat_clusters))) {
+  if( paste0(c, "_1") %in% unique(se$cluster_cond) & paste0(c, "_0") %in% unique(se$cluster_cond) ){
+      message("Finding markers between conditions within cluster ", c)
+      cid <- paste0("C", c)
+      clustercond_markers[[cid]] <- FindMarkers(se,
+                                               ident.1 = paste0(c, "_1"), ident.2 = paste0(c, "_0"),
+                                               only.pos = F,
+                                               min.pct = 0.1,
+                                               logfc.threshold = 0.15,
+                                               verbose = T)
+      clustercond_markers[[cid]]$gene <- rownames(clustercond_markers[[cid]])
+      clustercond_markers[[cid]]$cluster <- cid
+  } else {
+    message(paste("Cluster", c, "is not available for all conditions --- excluded!"))
+  }
+}
+```
+
+
+```{r clustercond_findallmarkers}
+clustercond_markers_df <- do.call(rbind.data.frame, clustercond_markers)
+clustercond_markers_df <- clustercond_markers_df[clustercond_markers_df$p_val_adj < 0.05, ]
+clustercond_markers_df <- clustercond_markers_df[, colnames(clustercond_markers_df)[c(7, 6, 1:5)]]
+
+datatable(clustercond_markers_df, rownames = F)
+```
+<br><br>
+
+  
+## Plot  
+  
+Expression correlation  
+
+```{r clustercond_findallmarkers_plot_scatter, fig.width=14, fig.height=18}
+plist <- list()
+for ( c in as.character(seq(1:19)) ){
+  cluster_c <- subset(se, seurat_clusters == c)
+  Idents(cluster_c) <- "insulin_stim"
+  avg.cluster_c <- log1p(AverageExpression(cluster_c, verbose = FALSE)$RNA)  # natural log of avg expression
+  avg.cluster_c$gene <- rownames(avg.cluster_c)
+  
+  label_genes <- clustercond_markers_df[clustercond_markers_df$cluster == paste0("C", c) & abs(clustercond_markers_df$avg_logFC) > 0.25, "gene"]
+  
+  p <- ggplot(avg.cluster_c, aes(`0`, `1`)) + 
+          geom_point(alpha = .25, color = color_high) + 
+          geom_abline(intercept = 0, slope = 1, color = "black") +
+          scale_y_log10() + 
+          scale_x_log10() +
+          labs(x="Before insulin", y="After insulin", title = paste("Cluster", c)) +
+          theme_classic() + theme(plot.title = element_text(hjust=0.5))
+  
+  if (length(label_genes)>0) {
+    p <- p + geom_point(data = avg.cluster_c[label_genes, ], mapping = aes(`0`, `1`), alpha = .25, color = color_low)
+    p <- LabelPoints(plot = p, points = label_genes, repel = TRUE, color = color_low)
+  }
+  plist[[c]] <- p
+}
+
+pgrid <- plot_grid(plotlist = plist, nrow = 5);pgrid
+```
+<br><br>
+
+  
+Violin  
+```{r clustercond_findallmarkers_plot_violin, fig.width=18, fig.height=4}
+p_vln <- VlnPlot(se, features = c("THRSP", "ANGPTL8", "PDK4"), 
+                 split.by = "insulin_stim", group.by = "cluster_anno", 
+                 cols = colors_insulin,
+                 pt.size = 0, combine = T) &
+            stat_summary(fun.y = median, geom = 'crossbar', colour = "black", width = 0.5); p_vln
+```
+<br><br>
+
+  
+Vulcano plot  
+```{r clustercond_findallmarkers_plot_vulcano, fig.width=10, fig.height=12}
+d_plot <- clustercond_markers_df
+colnames(d_plot)[colnames(d_plot)=="p_val_adj"] <- "padj"
+
+d_plot$sign_1m6 <- ifelse(test = d_plot$padj<1e-06 & !is.na(d_plot$padj), d_plot$gene, "")
+d_plot$sign_001 <- ifelse(test = d_plot$padj<0.01 & !is.na(d_plot$padj), d_plot$gene, "")
+d_plot <- subset(d_plot, !-log10(padj)<0.01)
+
+d_plot$cluster_new <- factor(d_plot$cluster, levels = unique(d_plot$cluster))
+
+p1 <- ggplot(d_plot, aes(x=avg_logFC, y=-log10(padj))) + 
+  geom_vline(xintercept = 0, color = "grey50") +
+  geom_hline(yintercept = 0, color = "black") +
+  geom_point(color = "grey30") +
+  geom_point(data = subset(d_plot,padj<1e-06), 
+             mapping = aes(x=avg_logFC, y=-log10(padj)), 
+             color = color_high, size=1) +
+  geom_text_repel(data = subset(d_plot,padj<1e-06), 
+                  mapping = aes(x=avg_logFC, y=-log10(padj), label = sign_1m6), size=3) +
+  xlim(-1.15, 1.15) +
+  facet_wrap(~ cluster_new, ncol=4) +
+  labs(title = "Significance level of padj < 1e-06") +
+  theme_linedraw() +
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank());p1
+
+p2 <- ggplot(d_plot, aes(x=avg_logFC, y=-log10(padj))) + 
+  geom_vline(xintercept = 0, color = "grey50") +
+  geom_hline(yintercept = 0, color = "black") +
+  geom_point(color = "grey30") +
+  geom_point(data = subset(d_plot, padj<0.01), 
+             mapping = aes(x=avg_logFC, y=-log10(padj)), 
+             color = color_high, size=1) +
+  geom_text_repel(data = subset(d_plot, padj<0.01 & padj>1e-06), 
+                  mapping = aes(x=avg_logFC, y=-log10(padj), label = sign_001), size=3) +
+  xlim(-1.15, 1.15) +
+  labs(title = "Significance level of padj < 0.001") +
+  facet_wrap(~ cluster_new, ncol=4) +
+  theme_linedraw() +
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank());p2
+```
+
+
+<br><br>
+
+## Export
+
+```{r export_table_plot}
+fname1 <- paste0(ANALYSIS_ID, ".clustercond_findmarkers_res")
+pdf(file = file.path(DIR_RES, "figures", paste0(fname1, ".pdf")), width = 14, height = 18, useDingbats = F);pgrid;dev.off()
+pdf(file = file.path(DIR_RES, "figures", paste0(fname1, "_violin", ".pdf")), width = 18, height = 4, useDingbats = F);p_vln;dev.off()
+pdf(file = file.path(DIR_RES, "figures", paste0(fname1, "_vulcano", ".pdf")), width = 10, height = 12, useDingbats = F);p1;p2;dev.off()
+write.csv(x = clustercond_markers_df, file = file.path(DIR_RES, "tables", paste0(fname1, ".csv")), row.names = F)
+```
+
+<br><br>
+
+# DESeq2 on pseudo-bulk
+
+## Pool data
+```{r bulk_data}
+bulk_data_ins_list <- list()
+bulk_data_ins <- data.frame(row.names = rownames(se))
+s_names <- unique(se$sample_name)
+c_include <- as.character(unique(se$seurat_clusters))
+
+for (c in c_include) {
+  for (s in s_names ) {
+    
+    if (nrow(subset(se[[]], sample_name == s & seurat_clusters == c)) > 0) {
+      s_spots <- colnames(subset(se, sample_name == s & seurat_clusters == c))
+      st_data_s <- SubsetSTData(se, spots = s_spots)
+      st_data_s_mat <- st_data_s@assays$RNA@counts
+      s_data <- data.frame(Matrix::rowSums(st_data_s_mat))
+    } else {
+      s_data <- data.frame(c_s = rep(0, nrow(se)), row.names = rownames(se))
+    }
+    colnames(s_data) <- paste0(c, ".", s)
+    bulk_data_ins <- cbind(bulk_data_ins, s_data)
+  }
+}
+# head(bulk_data_ins)
+```
+<br><br>
+
+## Design table  
+
+```{r de_design}
+cols_keep <- c("insulin_stim", "tissue_id", "condition", "gender", "date_exp", "subject_id", "subject_alias", "subject_id_insulin")
+de_des_ins <- metadata_ins[, cols_keep]
+de_des_ins$date_exp <- gsub(pattern = "-", replacement = ".", x = de_des_ins$date_exp)
+de_des_ins$insulin_stim <- as.factor(de_des_ins$insulin_stim)
+de_des_ins$tissue <- unlist( lapply( strsplit(x = de_des_ins$tissue_id, split = "-"), function(x) head(x, n=1) ) )
+de_des_ins$tissue_id <- NULL
+
+de_des_ins <- de_des_ins[2:dim(de_des_ins)[1],]  # remove NK49-before from first batch
+de_des_ins
+
+```
+<br><br>
+
+## DESeq2
+
+```{r deseq2_cluster_sample}
+c_include <- as.character(sort(unique(se$seurat_clusters)))
+res_ins_clusters <- list()
+for(c in c_include) {
+  message(paste("DESeq2 for cluster", c))
+  de_des_ins_cluster <- de_des_ins
+  de_des_ins_cluster$ind.n <- as.factor((c(1, 1, 2, 2, 3, 3, 4, 4)))
+  
+  rownames(de_des_ins_cluster) <- paste0(c, ".", rownames(de_des_ins_cluster))
+  
+  s_ins <- rownames(de_des_ins_cluster)
+  s_include <- s_ins[colSums(bulk_data_ins[, s_ins]) > 0]
+  
+  d_ins <- bulk_data_ins[, colnames(bulk_data_ins) %in% s_include]
+  de_des_ins_cluster_filt <- de_des_ins_cluster[colnames(d_ins), ]
+  
+  dds_ins_c <- DESeqDataSetFromMatrix(countData = d_ins,
+                                      colData = de_des_ins_cluster_filt,
+                                      design = ~ tissue + insulin_stim)
+  dds_ins_c <- DESeq(dds_ins_c)
+  
+  res_ins_c <- results(dds_ins_c, name="insulin_stim_1_vs_0")
+  res_ins_c_df <- as.data.frame(res_ins_c)
+  
+  res_ins_clusters[[c]] <- res_ins_c_df
+  message("======================")
+}
+```
+
+
+```{r deseq2_cluster_sample_significant}
+res_ins_clusters_sign <- list()
+res_ins_clusters_all <- list()
+for(c in names(res_ins_clusters)) {
+  d_tmp <- res_ins_clusters[[c]]
+  d_tmp$cluster <- paste0("C", c)
+  d_tmp$gene <- rownames(d_tmp)
+  d_tmp <- d_tmp[, colnames(d_tmp)[c(7, 8, 1:6)]]
+  
+  res_ins_clusters_all[[c]] <- d_tmp
+  
+  d_tmp2 <- subset(d_tmp, padj < 0.05)
+  if (nrow(d_tmp2) > 0) {
+    res_ins_clusters_sign[[c]] <- d_tmp2
+  }
+}
+
+res_ins_clusters_sign_df <- do.call(rbind.data.frame, res_ins_clusters_sign)
+res_ins_clusters_all_df <- do.call(rbind.data.frame, res_ins_clusters_all)
+
+datatable(res_ins_clusters_sign_df, rownames = F)
+```
+
+<br><br>
+
+
+## Plot
+
+```{r deseq2_plot_vulcano, fig.width=10, fig.height=11}
+d_plot <- res_ins_clusters_all_df
+d_plot <- d_plot[d_plot$cluster %in% unique(res_ins_clusters_sign_df$cluster), ]
+d_plot$sign_001 <- ifelse(test = d_plot$padj<0.01 & !is.na(d_plot$padj), d_plot$gene, "")
+d_plot$sign_05 <- ifelse(test = d_plot$padj<0.05 & !is.na(d_plot$padj), d_plot$gene, "")
+d_plot <- subset(d_plot, !-log10(padj)<0.01)
+
+d_plot$cluster_new <- factor(d_plot$cluster, levels = unique(d_plot$cluster))
+
+p1 <- ggplot(d_plot, aes(x=log2FoldChange, y=-log10(padj))) + 
+  geom_vline(xintercept = 0, color = "grey50") +
+  geom_hline(yintercept = 0, color = "black") +
+  geom_point(color = "grey30") +
+  geom_point(data = subset(d_plot,padj<0.01), 
+             mapping = aes(x=log2FoldChange, y=-log10(padj)), 
+             color = color_high, size=1) +
+  geom_text_repel(data = subset(d_plot,padj<0.01), 
+                  mapping = aes(x=log2FoldChange, y=-log10(padj), label = sign_001), size=3) +
+  xlim(-6, 6) +
+  facet_wrap(~ cluster_new, ncol=4) +
+  labs(title = "Significance level of padj < 0.01") +
+  theme_linedraw() +
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank());p1
+
+p2 <- ggplot(d_plot, aes(x=log2FoldChange, y=-log10(padj))) + 
+  geom_vline(xintercept = 0, color = "grey50") +
+  geom_hline(yintercept = 0, color = "black") +
+  geom_point(color = "grey30") +
+  geom_point(data = subset(d_plot, padj<0.05), 
+             mapping = aes(x=log2FoldChange, y=-log10(padj)), 
+             color = color_high, size=1) +
+  geom_text_repel(data = subset(d_plot, padj<0.05 & padj>0.01), 
+                  mapping = aes(x=log2FoldChange, y=-log10(padj), label = sign_05), size=3) +
+  xlim(-6, 6) +
+  facet_wrap(~ cluster_new, ncol=4) +
+  labs(title = "Significance level of padj < 0.05") +
+  theme_linedraw() +
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank());p2
+```
+
+<br><br>
+
+
+## Export  
+
+```{r deseq2_export}
+fname2 <- paste0(ANALYSIS_ID, ".clustercond_deseq2_res")
+pdf(file = file.path(DIR_RES, "figures", paste0(fname2, "_vulcano.pdf")), width = 10, height = 11, useDingbats = F);p1;p2;dev.off()
+# pdf(file = file.path(DIR_RES, "figures", paste0(fname2, "_sign001.pdf")), width = 10, height = 10, useDingbats = F);p1;dev.off()
+# pdf(file = file.path(DIR_RES, "figures", paste0(fname2, "_sign05.pdf")), width = 10, height = 10, useDingbats = F);p2;dev.off()
+write.csv(x = res_ins_clusters_sign_df, file = file.path(DIR_RES, "tables", paste0(fname2, ".csv")), row.names = F)
+```
+
+<br><br>
+
+
+# Gene expresssion per subject
+
+```{r compare_subject_gene_expr}
+genes_plot <- subset(res_ins_clusters_sign_df, cluster == "C4" & log2FoldChange > 2)$gene
+
+gene_bulk_df <- t(bulk_data_ins[genes_plot, ])
+
+c_include <- as.character(sort(as.numeric( unique(unlist(lapply(strsplit(x = rownames(gene_bulk_df), split = "\\."), `[[`, 1))) )))
+subject_info <- de_des_ins
+subject_info$sample_name <- rownames(de_des_ins)
+
+for(c in c_include){
+  subject_info_c <- subject_info
+  subject_info_c$cluster <- c
+  rownames(subject_info_c) <- paste0(c, ".", subject_info_c$sample_name)
+  
+  if(c == "1"){
+    subject_info_all <- subject_info_c
+  } else {
+    subject_info_all <- rbind(subject_info_all, subject_info_c)
+  }
+}
+
+r_include <- intersect(rownames(gene_bulk_df), rownames(subject_info_all))
+gene_bulk_df2 <- cbind(gene_bulk_df[r_include, ], subject_info_all[r_include, ])
+gene_bulk_df2$cluster_new <- factor(gene_bulk_df2$cluster, levels = as.character(sort(as.numeric(unique(gene_bulk_df2$cluster)))) )
+gene_bulk_df2[, genes_plot][gene_bulk_df2[ , genes_plot]<1] <- NA
+```
+
+
+## Plot  
+
+```{r export_fname3}
+fname3 <- paste0(ANALYSIS_ID, ".clustercond_subject_expression")
+```
+
+
+```{r compare_subject_gene_expr_plot_bar, fig.width=10, fig.height=10}
+pdf(file = file.path(DIR_RES, "figures", paste0(fname3, "_pooledcounts.pdf")), width = 10, height = 10, useDingbats = F)
+for(g in genes_plot) {
+  p <- ggplot(gene_bulk_df2, aes_string(x="tissue", y=g, fill = "insulin_stim")) +  # subset(gene_bulk_df2, cluster=="1")
+    geom_col(position = "dodge") +
+    scale_fill_manual(values = colors_insulin) +
+    facet_wrap(~cluster_new, ncol = 5) +  # , scales = "free_y"
+    labs(x="", y="Pooled count", title=g, fill ="") +
+    scale_y_log10() +
+    annotation_logticks(size = .2, sides = "l") +
+    theme_linedraw() +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1),
+          panel.grid.major = element_line(color="grey70"),
+          panel.grid.minor = element_blank())
+  print(p)
+}
+dev.off()
+```
+
+
+```{r compare_subject_gene_expr_plot_violin, fig.height=14, fig.width=14, warning=FALSE}
+genes_plot2 <- intersect(rownames(se@assays$SCT@scale.data), genes_plot)
+
+pdf(file = file.path(DIR_RES, "figures", paste0(fname3, "_spots.pdf")), width = 14, height = 14, useDingbats = F)
+for(s in sort(unique(se$subject_id))){
+  p_vln <- VlnPlot(subset(se, subject_id == s), features = genes_plot2, 
+                   group.by = "seurat_clusters", split.by = "insulin_stim", 
+                   slot = "scale.data", 
+                   pt.size = 0.0, cols = colors_insulin,
+                   ncol = 2) & geom_hline(yintercept = 0) & labs(x=paste(s, "clusters"), y="Scaled expr.")
+  print(p_vln) 
+}
+dev.off()
+```
+
+
+
+<br><br>
+
+
+# Integration of data
+
+Update: This approach is perhaps not quite suitable. --- skip
+
+
+## Split and perform integration  
+
+https://satijalab.org/seurat/v3.0/immune_alignment.html
+  
+  
+1. Split data
+
+```{r split_data}
+# se <- AddMetaData(se, paste0(se$subject_id, "_", se$insulin_stim), col.name = "subject_id_insulin")
+# 
+# spots_ins0 <- colnames(subset(se, insulin_stim == 0))
+# spots_ins1 <- colnames(subset(se, insulin_stim == 1))
+# 
+# se_ins0 <- SubsetSTData(se, spots = spots_ins0)
+# se_ins1 <- SubsetSTData(se, spots = spots_ins1)
+```
+  
+  
+2. Perform integration  
+
+```{r integrate_data_P1}
+# se_anchors <- FindIntegrationAnchors(object.list = list(se_ins0, se_ins1), reduction = "cca", dims = 1:30)
+```
+
+```{r integrate_data_P2}
+# se_combined <- IntegrateData(anchorset = se_anchors, dims = 1:30, features.to.integrate = rownames(se@assays$SCT@data))
+# DefaultAssay(se_combined) <- "integrated"
+```
+
+```{r scale_data}
+# se_combined <- ScaleData(se_combined)
+```
+  
+  
+3. Check integration
+
+```{r plot_integrated_data, fig.width=16, fig.height=4}
+# VlnPlot(se_combined, features = c("PLIN4", "ADIPOQ", "LEP"), 
+#         group.by = "seurat_clusters", split.by = "insulin_stim", 
+#         assay = "integrated", slot = "data", 
+#         pt.size = 0)
+# 
+# VlnPlot(se_combined, features = c("THRSP", "LPL", "BHLHE40"), 
+#         split.by = "date_exp", 
+#         group.by = "tissue_id", 
+#         assay = "SCT", slot = "data", 
+#         pt.size = 0)
+```
+
+
+```{r find_markers}
+# markers_all <- FindAllMarkers(se_combined, )
+```
+
+
+
+
+***  
+
+# Wrap up
+
+<br><br>
+
+## Session information  
+  
+This analysis was last compiled on `r Sys.Date()`.  
+  
+<br>
+  
+```{r sessioninfo}
+sessionInfo()
+```
+
