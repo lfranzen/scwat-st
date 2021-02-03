@@ -55,7 +55,7 @@ ComputeMeanSpotExpr <- function(
   output_data <- data.frame(row.names = rownames(se_assay_data))
   
   for (s in sample.names) {
-    message(paste0("\nComputing spot mean values per cluster for sample ", s, "...\n          "))
+    message(paste0("\nComputing spot mean values per cluster for sample ", s, "...\n             "))
     
     for (c in clusters.include) {
       mess <- sprintf("Cluster:%s", c)
@@ -68,24 +68,21 @@ ComputeMeanSpotExpr <- function(
       sc_spots <- intersect(c_spots, s_spots)
       
       # Calculate row means if number of spots >= spotn.cutoff
-      if (length(sc_spots) == 1) {
-        sc_data <- data.frame(se_assay_data[, sc_spots])
-        if (spotn.cutoff > 1) {
-          sc_data[,1] <- 0
-        }
+      
+      if (length(sc_spots) < spotn.cutoff) {
+        message(paste0("\nNumber of spots in cluster ", c, " in sample ", s, " is below cut off, setting to NA.\n             "))
+        sc_data <- data.frame(value = rep(NA, nrow(se_assay_data)), row.names = rownames(se_assay_data))
         
-      } else if (length(sc_spots) == 0) {
+      } else if (length(sc_spots) == 1) {
+        sc_data <- data.frame(se_assay_data[, sc_spots])
+        
+      }  else if (length(sc_spots) == 0) {
         sc_data <- data.frame(value = rep(0, nrow(se_assay_data)), row.names = rownames(se_assay_data))
         
       } else if (length(sc_spots) >= spotn.cutoff) {
         sc_data <- data.frame(Matrix::rowMeans(se_assay_data[, sc_spots]))
         
-      } else {
-        #' TODO: Set to NA instead of 0??
-        message(paste0("\nNumber of spots in cluster ", c, " in sample ", s, " is below cut off, setting to 0.\n          "))
-        sc_data <- data.frame(value = rep(0, nrow(se_assay_data)), row.names = rownames(se_assay_data))
-        
-      }
+      } 
       
       sc_name <- paste(c, s, sep=".")
       colnames(sc_data) <- sc_name
@@ -127,7 +124,7 @@ CalculateGeneInsulinRatio <- function (
   output_data_ratios <- data.frame(row.names = rownames(bulk.data),
                                    "gene" = rownames(bulk.data))
   for(s in subject.id.include) {
-    message(paste0("\nComputing gene ratio per cluster for subject ", s, "...          "))
+    message(paste0("\nComputing gene ratio per cluster for subject ", s, "...             "))
     
     for(c in clusters.include){
       c_id <- paste0("C",c)
@@ -232,13 +229,22 @@ CalculateGeneInsulinRatioMeans <- function (
     ngenes_up <- sum(ratio.data[genes.up, sc] > 1)
     ngenes_down <- sum(ratio.data[genes.down, sc] > 1)
     
-    if (ngenes_up >= gene.cutoff.up) {
+    if (is.na(ngenes_up)) {
+      output_mean_ratio[sc, "up"] <- NA
+      
+    } else if (ngenes_up >= gene.cutoff.up) {
       output_mean_ratio[sc, "up"] <- mean(ratio.data[genes.up, sc], na.rm=T)
+      
     }
     
-    if (ngenes_down >= gene.cutoff.down) {
+    if (is.na(ngenes_down)) {
+      output_mean_ratio[sc, "down"] <- NA
+      
+    } else if (ngenes_down >= gene.cutoff.down) {
       output_mean_ratio[sc, "down"] <- mean(ratio.data[genes.down, sc], na.rm=T)
+      
     }
+
   }
   
   output_mean_log2ratio <- output_mean_ratio
