@@ -21,8 +21,12 @@ output:
 **Description**  
 
 Psudo-bulk analysis of Visium data by summing gene expression data for all spots within a section/subject.  
-
-TODO: Add info about CAGE data. CAGE: DE analysis between before/after insulin clamp from abdominal scWAT tissue (?).
+  
+Aim of the analysis is to look at both genes differing between lean and obese, and also between baseline and hyperinsulinemia.  
+  
+  
+For the insulin analysis, the aim is to first identify a set of insulin-responding genes and thereafter identify which clusters are more enriched with this signature.  
+To identify a robust gene set of genes responding to insulin, the DEGs from the visium pseudo-bulk analysis is compared with DEGs identified in another study by Rydén et al. (PMID: 27545890) where insulin response was measured using cap-analysis gene expression (CAGE) analysis. The overlappning significant DEGs between the two data sets are used as a signature for insulin response, and is thereafter used to look at responses to insulin in each Visium sample by computing log2-ratios for each gene.  
 
 
 ***
@@ -164,11 +168,12 @@ head(gene_table)
 <br><br>
 
   
-# Bulk analysis
+# Pseudo-bulk analysis
   
 ## Visium Pseudo-bulk: Pool data  
 
 To get the bulk data, the gene expression across all spots within a sample will be summed.  
+  
   
 ### Baseline visium data  
 
@@ -621,6 +626,8 @@ ins_up_visium <- rownames(visium_up)
 ins_up_overlap1 <- intersect(rownames(visium_up), cage_up$symbol)
 ins_up_overlap2 <- intersect(rownames(visium_up), cage_up$hgnc_symbol)
 ins_up_overlap <- unique(c(ins_up_overlap1, ins_up_overlap2))
+
+#' Check list
 length(ins_up_overlap)
 ins_up_overlap
 ```
@@ -634,6 +641,7 @@ ins_down_visium <- rownames(visium_down)
 ins_down_overlap1 <- intersect(rownames(visium_down), as.character(cage_down$symbol))
 ins_down_overlap2 <- intersect(rownames(visium_down), as.character(cage_down$hgnc_symbol))
 ins_down_overlap <- unique(c(ins_down_overlap1, ins_down_overlap2))
+
 length(ins_down_overlap)
 ins_down_overlap
 ```
@@ -643,8 +651,6 @@ ins_down_overlap
 cage_mod$symbol_updated <- cage_mod$symbol
 cage_mod[cage_mod$hgnc_symbol %in% c(ins_up_overlap2, ins_down_overlap2), "symbol_updated"] <- cage_mod[cage_mod$hgnc_symbol %in% c(ins_up_overlap2, ins_down_overlap2), "hgnc_symbol"]
 ```
-
-
 <br><br>
   
   
@@ -687,9 +693,12 @@ rownames(df_cage_visium) <- df_cage_visium$gene
 fname <- "bulk_dea_ins_cage_visium.tsv"
 write.table(x = df_cage_visium, file = file.path(DIR_RES, "tables", fname), quote = F, sep = "\t", row.names = F)
 ```
+<br><br>
 
+  
+### Plot  
 
-### Plot visium box
+### Boxplots of Visium data
 
 ```{r plot_visium_ins_up}
 d_up <- t(d_ins[ins_up_overlap, ])
@@ -702,11 +711,8 @@ d_up_long <- gather(d_up, gene, expression, ins_up_overlap[1]:ins_up_overlap[len
 p <- ggplot(d_up_long, aes(x = reorder(gene, expression, FUN = median), y = expression, fill = Insulin)) +
   geom_boxplot() +
   scale_fill_manual(values = colors_insulin) +
-  # geom_point(size = 0.5, alpha = 0.7, aes(color=tissue)) +
-  # scale_color_manual(values = colors_multi[5:9]) +
   scale_y_log10() +
   labs(x="", y="Summed expression", title = "Upregulated genes after insulin") +
-  # rotate() +
   theme_classic() +
   theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5),
         plot.title = element_text(hjust = 0.5),
@@ -730,11 +736,9 @@ d_down_long <- gather(d_down, gene, expression, ins_down_overlap[1]:ins_down_ove
 p <- ggplot(d_down_long, aes(x = reorder(gene, expression, FUN = median), y = expression, fill = Insulin)) +
   geom_boxplot() +
   scale_fill_manual(values = colors_insulin) +
-  # geom_point(size = 0.5, alpha = 0.7, aes(color=tissue)) +
   scale_color_manual(values = colors_multi[5:9]) +
   scale_y_log10() +
   labs(x="", y="Summed expression", title = "Downregulated genes after insulin") +
-  # rotate() +
   theme_classic() +
   theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5),
         plot.title = element_text(hjust = 0.5),
@@ -745,24 +749,24 @@ fname <- "bulk_dea_insulin_cage_visium_down"
 pdf(file = file.path(DIR_FIG, paste0(fname, ".pdf")), width = 6, height = 4.5, useDingbats = F);p;dev.off()
 tiff(filename = file.path(DIR_FIG, paste0(fname, ".tiff")), units = "cm", width = 6*2.5, height = 4.5*2.5, res = 600); p; dev.off()
 ```
-
-
-### Plot Visium and CAGE
-
-```{r plot_cage_ins_up}
+  
+  
+### Visium vs CAGE comparison  
+  
+```{r plot_cage_ins_up, fig.width=8, fig.height=8}
 p1 <- ggplot(df_cage_visium, aes(x=reorder(gene, visium.log2FoldChange), y=cage.logFC, fill=cage.FDR)) +
   geom_bar(stat="identity") +
-  scale_fill_gradient(low = "grey30", high = "grey70") +
+  scale_fill_gradient(low = color_high, high = "grey60") +
   labs(x="", y="log2 fold change", title = "CAGE") +
-  theme_minimal() +
+  theme_linedraw() +
   theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5),
         plot.title = element_text(hjust = 0.5));
 
 p2 <- ggplot(df_cage_visium, aes(reorder(gene, visium.log2FoldChange), visium.log2FoldChange, fill=visium.padj)) +
   geom_bar(stat="identity") +
-  scale_fill_gradient(low = "grey30", high = "grey70") +
+  scale_fill_gradient(low = color_high, high = "grey60") +
   labs(x="", y="log2 fold change", title = "Visium") +
-  theme_minimal() +
+  theme_linedraw() +
   theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5),
         plot.title = element_text(hjust = 0.5));
 
@@ -775,86 +779,170 @@ tiff(filename = file.path(DIR_FIG, paste0(fname, ".tiff")), units = "cm", width 
 
   
   
-# Cluster response of insulin-responding genes  
+# Cluster response to insulin treatment  
   
-  
-## Visium adipocyte data
-
-### Gene expression  
-
-```{r prep_visium_adipocyte_assaydata}
-se_ins_data_all <- GetAssayData(subset(se_ins, cluster_anno %in% c("Adipocyte 1", "Adipocyte 2")), slot = "data")  # normalized data
+```{r genes_insulin_include}
+# genes_ins <- as.character(df_cage_visium$gene)
+genes_ins <- c(ins_up_overlap, ins_down_overlap)
+genes_ins_include <- intersect(rownames(se_ins), genes_ins)
 ```
-
-
-#### All genes
-
-```{r prep_visium_adipocyte_insulin_all}
-se_ins_data_grouped_all <- data.frame(row.names = rownames(se_ins_data_all))
+   
+  
+```{r bulk_data_sample_cluster_prep}
 s_names <- unique(se_ins@meta.data$sample_name)  # metadata_ins$sample_name
-sc_names <- c(paste(3, s_names, sep="."), paste(4, s_names, sep="."))
-se_ins_metadata_all <- data.frame(row.names = sc_names,
-                                  insulin_stim = rep(0, length(sc_names)), 
-                                  bmi = rep(0, length(sc_names)), 
-                                  condition = rep("", length(sc_names)), 
-                                  subject_id = rep("", length(sc_names)), 
-                                  m_value = rep(0, length(sc_names)), 
-                                  cluster = rep("", length(sc_names)), 
-                                  stringsAsFactors = F)
+c_ids <- as.character(sort(as.numeric(as.character(unique(se_ins@meta.data$seurat_clusters)))))
+```
+   
+   
+## Functions  
 
-for(s in s_names){
-  s_spots <- colnames(subset(se_ins, sample_name == s))
-  for(c in c(4, 5)){
-    c_spots <- colnames(subset(se_ins, seurat_clusters == c))
-    sc_spots <- intersect(c_spots, s_spots)
-    sc_data <- data.frame(Matrix::rowMeans(se_ins_data_all[, sc_spots]))
-    sc_name <- paste(c, s, sep=".")
-    colnames(sc_data) <- sc_name
-    se_ins_data_grouped_all <- cbind(se_ins_data_grouped_all, sc_data)
-    se_ins_metadata_all[sc_name, ] <- metadata_ins[s, c("insulin_stim", "bmi", "condition", "subject_id", "m_value")]
-    if(c==5){
-      se_ins_metadata_all[sc_name, "cluster"] <- "Adipocyte 1"  # LEP
-    } else if (c==4){
-      se_ins_metadata_all[sc_name, "cluster"] <- "Adipocyte 2"  # ADIPOQ
-    }
-  }
-}
+```{r source_functions}
+source(file.path(DIR_WD, "functions_insulin_response.R"))
+```
 
-se_ins_metadata_all <- se_ins_metadata_all[colnames(se_ins_data_grouped_all), ]
-se_ins_metadata_all
-head(se_ins_data_grouped_all)
+<br><br>
+  
+  
+  
+## Fetch data and compute ratios for all clusters and genes
+
+
+### Calculate spot means per sample
+
+```{r bulk_data_sample_cluster_run, message=TRUE, warning=FALSE}
+se_ins_allc_grouped_list <- ComputeMeanSpotExpr(se.object = se_ins,
+                                                se.assay.data = NULL, # se_ins_allc
+                                                se.data.slot = "data",
+                                                genes.include = rownames(se_ins),
+                                                sample.metadata = metadata_ins,
+                                                clusters.include = c_ids,
+                                                sample.names = s_names, 
+                                                spotn.cutoff = 10)
+
+se_ins_allc_grouped <- se_ins_allc_grouped_list[[1]]
+se_ins_metadata_allc <- se_ins_allc_grouped_list[[2]]
+```
+
+```{r bulk_data_sample_cluster_export}
+fname <- "bulk_data_sample_cluster_all"
+write.table(se_ins_allc_grouped, file = file.path(DIR_RES, "tables", paste0(fname, "_data.tsv")), sep = "\t", row.names = T, col.names = T, quote = F)
+write.table(se_ins_metadata_allc, file = file.path(DIR_RES, "tables", paste0(fname, "_metadata.tsv")), sep = "\t", row.names = T, col.names = T, quote = F)
+```
+  
+  
+### Insulin response ratios per subject
+
+```{r compute_ins_response_ratios_run, message=TRUE}
+se_ins_allc_ratios <- CalculateGeneInsulinRatio(bulk.data = se_ins_allc_grouped,
+                                                bulk.metadata = se_ins_metadata_allc,
+                                                clusters.include = c_ids,
+                                                subject.id.include = unique(se_ins_metadata_allc$subject_id),
+                                                column.subject.id = "subject_id",
+                                                column.insulin = "insulin_stim",
+                                                pseudo.count = 0.01)
 ```
 
 
+```{r compute_ins_response_ratios_export}
+fname <- "bulk_data_sample_cluster_all_ratios"
+write.table(se_ins_allc_ratios, file = file.path(DIR_RES, "tables", paste0(fname, "_data.tsv")), sep = "\t", row.names = T, col.names = T, quote = F)
+write.table(log2(se_ins_allc_ratios), file = file.path(DIR_RES, "tables", paste0(fname, "Log2_data.tsv")), sep = "\t", row.names = T, col.names = T, quote = F)
+```
+  
+  
+### Mean ratio for insulin-responding genes  
+  
+```{r compute_ins_response_ratios_mean_run}
+genes_of_interest <- data.frame(genes = c(
+  "DEPP1", "BHLHE40", "DUSP4", "ANGPTL8", "KLF10", "PDK4", "APOC1", "ACLY", "LDLR", "TMEM70", 
+  "RASD1", "GADD45A", "THRSP", "PPP1R3B", "CEBPB", "MID1IP1", "SREBF1", "HES1", "CDKN1A", 
+  "INSIG1", "CISH", "SPRY4", "LFNG", "LINC00324", "G0S2"), 
+  stringsAsFactors = F
+  )
+rownames(genes_of_interest) <- genes_of_interest$genes
+genes_of_interest$reg <- "up" 
+genes_of_interest[rownames(subset(res_ins_df[genes_of_interest$genes,], log2FoldChange<0)), "reg"] <- "down"
 
-#### Insulin responding genes  
+up_genes <- subset(genes_of_interest, reg=="up")$gene
+down_genes <- subset(genes_of_interest, reg=="down")$gene
 
-```{r prep_visium_adipocyte_insulin_selected}
-genes_ins <- as.character(df_cage_visium$gene)
-genes_ins_include <- intersect(rownames(se_ins_data_all), genes_ins)
-se_ins_data <- as.data.frame(se_ins_data_all[genes_ins_include, ])
 
-se_ins_data_grouped <- data.frame(row.names = rownames(se_ins_data))
+output_mean_ratio <- CalculateGeneInsulinRatioMeans(
+                        ratio.data = se_ins_allc_ratios,
+                        genes.up = up_genes,
+                        genes.down = down_genes,
+                        gene.cutoff.up = 2,
+                        gene.cutoff.down = 1,
+                        return.log2 = FALSE)
+
+output_mean_log2ratio <- CalculateGeneInsulinRatioMeans(
+                            ratio.data = se_ins_allc_ratios,
+                            genes.up = up_genes,
+                            genes.down = down_genes,
+                            gene.cutoff.up = 2,
+                            gene.cutoff.down = 1,
+                            return.log2 = T)
+```
+
+
+```{r compute_ins_response_ratios_mean_export}
+fname <- "bulk_data_sample_cluster_mean_ratio"
+write.table(output_mean_ratio, file = file.path(DIR_RES, "tables", paste0(fname, "_data.tsv")), sep = "\t", row.names = T, col.names = T, quote = F)
+write.table(output_mean_log2ratio, file = file.path(DIR_RES, "tables", paste0(fname, "Log2_data.tsv")), sep = "\t", row.names = T, col.names = T, quote = F)
+```
+
+
+```{r test_plot, fig.width=8, fig.height=3}
+# d_plot <- merge(x=output_mean_log2ratio, y=metadata_ins, by.x="subject", by.y="subject_id")
+# d_plot$cluster_subject <- paste0(d_plot$cluster, ".", d_plot$subject)
+# d_plot <- d_plot[!duplicated(d_plot$cluster_subject),]
+# 
+# ggplot(subset(d_plot, cluster %in% c("C4", "C5", "C6")), aes(x = reorder(subject, m_value), y = up, color = m_value)) +
+#   geom_point(size = 3) +
+#   facet_wrap(~cluster) +
+#   theme_linedraw()
+```
+
+<br><br>
+  
+  
+### Subset adipocyte (C4, C5) data
+
+```{r cluster_response_subset_adipocytes}
+# Sample data
+colnames_select <- c(grep("^4.", colnames(se_ins_allc_grouped), value = T), grep("^5.", colnames(se_ins_allc_grouped), value = T))
+se_ins_grouped_adi <- se_ins_allc_grouped[, colnames_select]
+
+# Subject ratio
+colnames_select <- c(grep("^4.", colnames(se_ins_allc_ratios), value = T), grep("^5.", colnames(se_ins_allc_ratios), value = T))
+se_ins_ratios_adi <- se_ins_allc_ratios[, colnames_select]
+colnames(se_ins_ratios_adi) <- gsub("^4.", "PLIN.", colnames(se_ins_ratios_adi))
+colnames(se_ins_ratios_adi) <- gsub("^5.", "LEP.", colnames(se_ins_ratios_adi))
+
+# Subject mean insulin ratio
+rownames_select <- c(grep("^4.", rownames(output_mean_log2ratio), value = T), grep("^5.", rownames(output_mean_log2ratio), value = T))
+se_ins_ratio_mean_adi <- output_mean_log2ratio[rownames_select, ]
+rownames(se_ins_ratio_mean_adi) <- gsub("^4.", "PLIN.", rownames(se_ins_ratio_mean_adi))
+rownames(se_ins_ratio_mean_adi) <- gsub("^5.", "LEP.", rownames(se_ins_ratio_mean_adi))
+se_ins_ratio_mean_adi <- se_ins_ratio_mean_adi[,1:2]
+```
+
+```{r cluster_response_subset_adipocytes_metadata}
 s_names <- unique(se_ins@meta.data$sample_name)
-sc_names <- c(paste(3, s_names, sep="."), paste(4, s_names, sep="."))
-se_ins_metadata <- data.frame(row.names = sc_names,
-                              insulin_stim = rep(0, length(sc_names)), 
-                              bmi = rep(0, length(sc_names)), 
-                              condition = rep("", length(sc_names)), 
-                              subject_id = rep("", length(sc_names)), 
-                              m_value = rep(0, length(sc_names)), 
-                              cluster = rep("", length(sc_names)), 
-                              stringsAsFactors = F)
+sc_names_adi <- c(paste(4, s_names, sep="."), paste(5, s_names, sep="."))
 
+se_ins_metadata <- data.frame(row.names = sc_names_adi,
+                              insulin_stim = rep(0, length(sc_names_adi)), 
+                              bmi = rep(0, length(sc_names_adi)), 
+                              condition = rep("", length(sc_names_adi)), 
+                              subject_id = rep("", length(sc_names_adi)),  
+                              m_value = rep(0, length(sc_names_adi)), 
+                              cluster = rep("", length(sc_names_adi)), 
+                              stringsAsFactors = F)
 for(s in s_names){
   s_spots <- colnames(subset(se_ins, sample_name == s))
   for(c in c(4, 5)){
-    c_spots <- colnames(subset(se_ins, seurat_clusters == c))
-    sc_spots <- intersect(c_spots, s_spots)
-    sc_data <- data.frame(Matrix::rowMeans(se_ins_data[, sc_spots]))
     sc_name <- paste(c, s, sep=".")
-    colnames(sc_data) <- sc_name
-    se_ins_data_grouped <- cbind(se_ins_data_grouped, sc_data)
     se_ins_metadata[sc_name, ] <- metadata_ins[s, c("insulin_stim", "bmi", "condition", "subject_id", "m_value")]
     if(c==5){
       se_ins_metadata[sc_name, "cluster"] <- "Adipocyte 1"  # LEP
@@ -863,94 +951,22 @@ for(s in s_names){
     }
   }
 }
-
-# se_ins_data_grouped
-se_ins_metadata <- se_ins_metadata[colnames(se_ins_data_grouped), ]
-se_ins_metadata
-head(se_ins_data_grouped)
 ```
 
 
-#### Save tables
-
-```{r save_grouped_ins_tables}
-fname1 <- "bulk_grouped_cluster_expression-all_genes.tsv"
-write.table(x = se_ins_data_grouped_all, file = file.path(DIR_RES, "tables", fname1), quote = F, sep = "\t", row.names = T)
-
-fname2 <- "bulk_grouped_cluster_expression-insulin_resp_genes.tsv"
-write.table(x = se_ins_data_grouped, file = file.path(DIR_RES, "tables", fname2), quote = F, sep = "\t", row.names = T)
-```
 <br><br>
-
-
-### Group insulin gene response
-
-```{r plot_visium_adipocyte_insulin_prep_score}
-se_ins_data_score <- rbind(colMeans(se_ins_data_grouped[ins_up_overlap, ]), 
-                           colMeans(se_ins_data_grouped[ins_down_overlap, ]))
-rownames(se_ins_data_score) <- c("up", "down")
-# se_ins_data_score
-
-
-# Calculate difference score for each indvidual
-se_ins_data_score_mean <- data.frame()
-se_ins_data_score_ratio <- data.frame()
-for(s in unique(se_ins_metadata$subject_id)){
-  bool_plin_0 <- rownames(se_ins_metadata[(se_ins_metadata$subject_id==s & se_ins_metadata$cluster=="Adipocyte 2" & se_ins_metadata$insulin_stim=="0"),])
-  bool_plin_1 <- rownames(se_ins_metadata[(se_ins_metadata$subject_id==s & se_ins_metadata$cluster=="Adipocyte 2" & se_ins_metadata$insulin_stim=="1"),])
-  bool_lep_0 <- rownames(se_ins_metadata[(se_ins_metadata$subject_id==s & se_ins_metadata$cluster=="Adipocyte 1" & se_ins_metadata$insulin_stim=="0"),])
-  bool_lep_1 <- rownames(se_ins_metadata[(se_ins_metadata$subject_id==s & se_ins_metadata$cluster=="Adipocyte 1" & se_ins_metadata$insulin_stim=="1"),])
   
-  pc <- .01 # pseudo count
-  if(s=="NK49"){
-    s_plin_all <- data.frame("ratio" = c(rowMeans(se_ins_data_grouped[ins_up_overlap, bool_plin_1]+pc) / (se_ins_data_grouped[ins_up_overlap, bool_plin_0]+pc), 
-                                           rowMeans(se_ins_data_grouped[ins_down_overlap, bool_plin_1]+pc) / (se_ins_data_grouped[ins_down_overlap, bool_plin_0]+pc)), 
-                               row.names = c(ins_up_overlap, ins_down_overlap)
-                               )
-
-    s_lep_all <- data.frame("ratio" = c(rowMeans(se_ins_data_grouped[ins_up_overlap, bool_lep_1]+pc) / (se_ins_data_grouped[ins_up_overlap, bool_lep_0]+pc), 
-                                       rowMeans(se_ins_data_grouped[ins_down_overlap, bool_lep_1]+pc) / (se_ins_data_grouped[ins_down_overlap, bool_lep_0]+pc)), 
-                           row.names = c(ins_up_overlap, ins_down_overlap)
-                           )
-
-  } else {
-    s_plin_all <- data.frame("ratio" = c((se_ins_data_grouped[ins_up_overlap, bool_plin_1]+pc) / (se_ins_data_grouped[ins_up_overlap, bool_plin_0]+pc), 
-                                           (se_ins_data_grouped[ins_down_overlap, bool_plin_1]+pc) / (se_ins_data_grouped[ins_down_overlap, bool_plin_0]+pc)), 
-                           row.names = c(ins_up_overlap, ins_down_overlap)
-                           )
-    s_lep_all <- data.frame("ratio" = c((se_ins_data_grouped[ins_up_overlap, bool_lep_1]+pc) / (se_ins_data_grouped[ins_up_overlap, bool_lep_0]+pc), 
-                                        (se_ins_data_grouped[ins_down_overlap, bool_lep_1]+pc) / (se_ins_data_grouped[ins_down_overlap, bool_lep_0]+pc)), 
-                       row.names = c(ins_up_overlap, ins_down_overlap)
-                       )
-  }
-  s_plin <- data.frame("up" = mean(s_plin_all[ins_up_overlap, "ratio"]), 
-                       "down" = mean(s_plin_all[ins_down_overlap, "ratio"]))
-  s_lep <- data.frame("up" = mean(s_lep_all[ins_up_overlap, "ratio"]), 
-                       "down" = mean(s_lep_all[ins_down_overlap, "ratio"]))
   
-  rownames(s_plin) <- colnames(s_plin_all) <- paste0("PLIN.",s)
-  rownames(s_lep) <- colnames(s_lep_all) <- paste0("LEP.",s)
-  s_out <- rbind(s_plin, s_lep)
   
-  if(dim(se_ins_data_score_ratio)[1]==0){
-    se_ins_data_score_ratio <- cbind(s_plin_all, s_lep_all)
-  } else {
-    se_ins_data_score_ratio <- cbind(se_ins_data_score_ratio, cbind(s_plin_all, s_lep_all))
-  }
-  se_ins_data_score_mean <- rbind(se_ins_data_score_mean, s_out)
-}
+## Plots
 
-sd_up <- colSds(as.matrix(log2(se_ins_data_score_ratio[ins_up_overlap, ])))
-sd_down <- colSds(as.matrix(log2(se_ins_data_score_ratio[ins_down_overlap, ])))
-se_ins_data_score_log2sd <- data.frame("up" = sd_up,
-                                       "down" = sd_down, row.names = colnames(se_ins_data_score_ratio))
-```
+### Heatmap: Insulin responding genes  
 
+#### Prepare column/row data  
+  
+##### Adipocytes
 
-
-#### Plot
-
-```{r plot_visium_adipocyte_insulin_hm_setup}
+```{r hm_adi_clus_prep1}
 my_gene_col <- data.frame("regulation" = df_cage_visium[genes_ins_include, c("reg")], 
                           row.names = rownames(df_cage_visium[genes_ins_include,]))
 my_sample_col <- se_ins_metadata[, c("insulin_stim", 
@@ -970,15 +986,13 @@ my_colour = list(
                    "NO148" = colors_multi[4]),
     m_value = colors_mval,
     cluster = colors_adi[1:2],
-             # c("Adipocyte 2" = "#907198",
-             #  "Adipocyte 1" = "#BFABC3"),
     regulation = c(down = color_low2, up = color_high)
 )
 
 ```
 
 
-```{r plot_visium_adipocyte_insulin_hm_score_metadata_setup}
+```{r hm_adi_clus_prep2}
 my_sample_col_2 <- my_sample_col %>%
   group_by(subject_id) %>%
   dplyr::top_n(n=1, wt = insulin_stim)
@@ -993,69 +1007,102 @@ for(c in unique(my_sample_col_2$cluster)){
     my_sample_col_2[rows_incl, "rname"] <- paste0("PLIN.", my_sample_col_2[rows_incl, "subject_id"])
   }
 }
-# se_ins_data_score_mean
+
 my_sample_col_2 <- my_sample_col_2[!duplicated(my_sample_col_2$rname), ]
 rownames(my_sample_col_2) <- my_sample_col_2$rname
 my_sample_col_2
+```
+  
+  
+##### All clusters
 
+```{r hm_all_clus_prep1}
+cols_allc <- rep("grey80", length(c_ids))
+names(cols_allc) <- paste0("C", c_ids)
+cols_allc[c("C5", "C4")] <- colors_adi[c("Adipocyte 2", "Adipocyte 1")] # c("#F768A1", "#FBB4B9")
+
+my_colour_allc = list(
+    condition = c(lean = colors_main[1], obese = colors_main[2]),
+    insulin_stim = c(`0` = colors_insulin[1], `1` = colors_insulin[2]),
+    subject_id = c("NK49" =  colors_multi[3],
+                   "NK50" =  colors_multi[4],
+                   "NO137" = colors_multi[5],
+                   "NO148" = colors_multi[6]),
+    m_value = colors_mval,
+    cluster = cols_allc,
+    regulation = c(down = color_low, up = color_high)
+)
 ```
 
 
-#### Heatmap  
+```{r hm_all_clus_prep2}
+my_gene_col <- data.frame("regulation" = df_cage_visium[genes_ins_include, c("reg")], 
+                          row.names = rownames(df_cage_visium[genes_ins_include,]))
 
-##### All genes  
+my_sample_col_allc <- se_ins_metadata_allc[, c("insulin_stim", 
+                                               "condition",
+                                               "subject_id",
+                                               "m_value",
+                                               "cluster")]
+my_sample_col_allc$insulin_stim <- as.character(my_sample_col_allc$insulin_stim)
 
-```{r plot_visium_adipocyte_insulin_hm, fig.width=6, fig.height=8, fig.show='hold'}
-# DoHeatmap(subset(se_ins, seurat_clusters %in% c(3, 4)), features = as.character(df_cage_visium$gene)) +
-#   scale_fill_gradientn(colours = rev(RColorBrewer::brewer.pal(5, "RdYlBu")))
-# VlnPlot(se_ins, features = c("ADIPOQ", "LEP"))
+my_sample_col_allc <- my_sample_col_allc %>%
+  group_by(subject_id) %>%
+  dplyr::top_n(n=1, wt = insulin_stim)
 
+my_sample_col_allc <- my_sample_col_allc[,-1]
+my_sample_col_allc <- as.data.frame(my_sample_col_allc)
+
+my_sample_col_allc$rname <- paste0("0.", my_sample_col_allc[, "subject_id"])
+for(c in c_ids){
+  rows_incl <- rownames(my_sample_col_allc[my_sample_col_allc$cluster==paste0("C",c), ]) 
+  my_sample_col_allc[rows_incl, "rname"] <- paste0(c, ".", my_sample_col_allc[rows_incl, "subject_id"])
+}
+
+# se_ins_data_score_mean
+my_sample_col_allc <- my_sample_col_allc[!duplicated(my_sample_col_allc$rname), ]
+rownames(my_sample_col_allc) <- my_sample_col_allc$rname
+my_sample_col_allc
+```
+  
+  
+  
+#### Adipocytes (C4, C5)  
+  
+##### Mean expression  
+
+```{r plot_hm_adi_meanexpr, fig.width=6, fig.height=8, fig.show='hold'}
 cal_z_score <- function(x){
   (x - mean(x)) / sd(x)
 }
  
-data_hm_norm <- t(apply(se_ins_data_grouped, 1, cal_z_score))
+data_hm_norm <- t(apply(se_ins_grouped_adi[rownames(my_gene_col),], 1, cal_z_score))
 
-fname <- "bulk_dea_insulin_cage_visium-cluster_heatmap_zscore"
-pdf(file = file.path(DIR_FIG, paste0(fname, ".pdf")), width = 6, height = 8, useDingbats = F);
 breaksList <- seq(-1.5, 1.5, by = 0.1)
-p_hm <- pheatmap(data_hm_norm,  # se_ins_data_grouped, data_hm_norm
+p_hm <- pheatmap(data_hm_norm,
                  annotation_colors = my_colour,
                  annotation_col = my_sample_col[,c(1,3,4,5)],
                  annotation_row = my_gene_col,
                  breaks = breaksList,
-                 # color = viridis::viridis(length(breaksList)),
                  color = colorRampPalette(c(color_low2, "white", color_high))(length(breaksList)-1),
                  border_color = "white"
-                 )
+                 );print(p_hm)
+
+fname <- "bulk_dea_insulin_cage_visium-cluster_heatmap_zscore"
+pdf(file = file.path(DIR_FIG, paste0(fname, ".pdf")), width = 6, height = 8, useDingbats = F);
+print(p_hm)
 dev.off()
-
-# tiff(filename = file.path(DIR_FIG, paste0(fname, ".tiff")), units = "cm", width = 10*2.5, height = 8*2.5, res = 600)
-# dev.off()
 ```
+  
+  
+##### Log2-ratio per subject  
 
-
-
-##### Ratio
-
-```{r plot_visium_adipocyte_insulin_hm_score_all_savetable}
-fname <- "bulk_grouped_cluster_expression_log2ratios-insulin_genes.tsv"
-t_export <- log2(se_ins_data_score_ratio)
-t_export$gene <- rownames(t_export)
-write.table(x = t_export, file = file.path(DIR_RES, "tables", fname), quote = F, sep = "\t", row.names = F)
-```
-
-
-```{r plot_visium_adipocyte_insulin_hm_score_all, fig.width=4.5, fig.height=8}
-fname <- "bulk_dea_insulin_cage_visium-cluster_heatmap_log2ratio"
-pdf(file = file.path(DIR_FIG, paste0(fname, ".pdf")), width = 4.6, height = 8, useDingbats = F);
-
-ph_plot <- log2(se_ins_data_score_ratio)
+```{r plot_hm_adi_log2ratio, fig.width=4.5, fig.height=8}
+ph_plot <- log2(se_ins_ratios_adi[rownames(my_gene_col),])
 ph_plot <- ph_plot[,rownames(my_sample_col_2[order(my_sample_col_2$cluster, my_sample_col_2$m_value),])]
-data_hm_norm <- t(apply(se_ins_data_grouped, 1, cal_z_score))
 
 breaksList <- seq(-4, 4, by = 0.5)
-pheatmap(ph_plot,
+p_hm <- pheatmap(ph_plot,
          annotation_colors = my_colour,
          annotation_col = my_sample_col_2[order(my_sample_col_2$cluster, my_sample_col_2$m_value), c(3,4)],
          annotation_row = my_gene_col, 
@@ -1065,34 +1112,99 @@ pheatmap(ph_plot,
          breaks = breaksList,
          color = colorRampPalette(c(color_low2, "white", color_high))(length(breaksList)-1),
          border_color = "white"
-         )
+         );print(p_hm)
 
+fname <- "bulk_dea_insulin_cage_visium-cluster_heatmap_log2ratio"
+pdf(file = file.path(DIR_FIG, paste0(fname, ".pdf")), width = 4.6, height = 8, useDingbats = F);
+print(p_hm)
 dev.off()
+
 ```
+  
+  
+##### Log2-mean-ratio ratio per subject  
 
-
-
-```{r plot_visium_adipocyte_insulin_hm_score_mean}
-fname <- "bulk_dea_insulin_cage_visium-cluster_heatmap_log2ratio_mean"
-pdf(file = file.path(DIR_FIG, paste0(fname, ".pdf")), width = 6.5, height = 3, useDingbats = F);
+```{r plot_hm_adi_log2meanratio, fig.width=6, fig.height=3}
 breaksList <- seq(-2.5, 2.5, by = 0.5)
-pheatmap(t(log2(se_ins_data_score_mean)),  # se_ins_data_grouped, data_hm_norm
+p_hm <- pheatmap(t(se_ins_ratio_mean_adi),
          annotation_colors = my_colour,
          annotation_col = my_sample_col_2[,c(3,4)],
          cluster_rows = F,
          breaks = breaksList,
          color = colorRampPalette(c(color_low2, "white", color_high))(length(breaksList)-1),
          border_color = "white"
-         )
+         );print(p_hm)
+
+fname <- "bulk_dea_insulin_cage_visium-cluster_heatmap_log2ratio_mean"
+pdf(file = file.path(DIR_FIG, paste0(fname, ".pdf")), width = 6.5, height = 3, useDingbats = F)
+print(p_hm)
+dev.off()
+
+```
+  
+  
+  
+#### All clusters
+
+```{r hm_allc_data_prep}
+hm_dplot <- log2(se_ins_allc_ratios[rownames(my_gene_col),])
+hm_dplot[is.na(hm_dplot)] <- 0
+
+hm_dplot_mean <- log2(output_mean_ratio[,1:2])
+hm_dplot_mean[is.na(hm_dplot_mean)] <- 0
+```
+  
+  
+##### Log2-ratio per subject  
+
+```{r plot_hm_allclusters_log2ratio, fig.width=16, fig.height=8}
+breaksList <- seq(-2, 2, by = 0.01)
+p_hm <- pheatmap(
+   mat = hm_dplot,
+   annotation_colors = my_colour_allc,
+   annotation_col = my_sample_col_allc[,c(2,3,4)],
+   annotation_row = my_gene_col,
+   cluster_rows = T,
+   breaks = breaksList,
+   color = colorRampPalette(c(color_low2, "white", color_high))(length(breaksList)-1),
+   border_color = "white"
+   ); print(p_hm)
+
+fname <- "bulk_dea_insulin_cage_visium-all_clusters_heatmap_log2ratio"
+pdf(file = file.path(DIR_FIG, paste0(fname, ".pdf")), width = 16, height = 8, useDingbats = F)
+print(p_hm)
+dev.off()
+```
+  
+  
+##### Log2-mean-ratio per subject  
+
+```{r plot_hm_allclusters_lg2meanratio, fig.width=4, fig.height=12}
+breaksList <- seq(-3, 3, by = 0.1)
+p_hm <- pheatmap(hm_dplot_mean,
+         annotation_colors = my_colour_allc,
+         annotation_row = my_sample_col_allc[,c(2,3,4)],
+         # annotation_row = my_gene_col,
+         cluster_rows = T,
+         cluster_cols = F,
+         breaks = breaksList,
+         color = colorRampPalette(c(color_low2, "white", color_high))(length(breaksList)-1),
+         border_color = "white"
+         );print(p_hm)
+
+fname <- "bulk_dea_insulin_cage_visium-all_clusters_heatmap_log2ratio_mean"
+pdf(file = file.path(DIR_FIG, paste0(fname, ".pdf")), width = 4.5, height = 12, useDingbats = F)
+print(p_hm)
 dev.off()
 ```
 
+<br>
 
+### Other plots: Adipocytes  
 
-#### Boxplot  
-
+#### Boxplot   
 ```{r plot_visium_adipocyte_insulin_box_score_dplot}
-d_plot <- cbind(log2(se_ins_data_score_mean), my_sample_col_2)
+d_plot <- cbind(se_ins_ratio_mean_adi, my_sample_col_2[rownames(se_ins_ratio_mean_adi),])
 
 fname <- "bulk_grouped_cluster_expression_log2ratios-insulin_genes_grouped.tsv"
 t_export <- d_plot
@@ -1100,7 +1212,7 @@ write.table(x = t_export, file = file.path(DIR_RES, "tables", fname), quote = F,
 ```
 
 
-```{r plot_visium_adipocyte_insulin_box_score, fig.width = 4.5, fig.height = 2.5}
+```{r plot_visium_adipocyte_insulin_box_score, fig.width = 5, fig.height = 2.5}
 p1 <- ggplot(d_plot, aes(x=cluster, y=up))+
   geom_boxplot() +
   # geom_line(aes(group=subject_id), color = "grey80") +
@@ -1111,7 +1223,7 @@ p1 <- ggplot(d_plot, aes(x=cluster, y=up))+
   labs(y="Expression log2-ratio") +
   labs(title="Upreg. genes", x="") +
   theme_classic() +
-  theme(legend.position = "none");p1
+  theme(legend.position = "none")
   
 p2 <- ggplot(d_plot, aes(x=cluster, y=down)) +
   geom_boxplot() +
@@ -1124,26 +1236,25 @@ p2 <- ggplot(d_plot, aes(x=cluster, y=down)) +
   labs(y="Expression log2-ratio") +
   labs(title="Downreg. genes", x="") +
   theme_classic() +
-  theme(legend.position = "none");p2
+  theme(legend.position = "none")
+
+p <- plot_grid(p1, p2, nrow=1);p
 
 fname <- "bulk_dea_insulin_cage_visium-cluster_box_scores"
-pdf(file = file.path(DIR_FIG, paste0(fname, ".pdf")), width = 5, height = 2.5, useDingbats = F);
-plot_grid(p1, p2, nrow=1)
-dev.off()
+pdf(file = file.path(DIR_FIG, paste0(fname, ".pdf")), width = 5, height = 2.5, useDingbats = F);p;dev.off()
 ```
 
 <br>
 
-#### Corr plot
+#### Dot plot: m-value vs log2-mean-ratio
 
-```{r plot_visium_adipocyte_insulin_corr_score, fig.width = 4.5, fig.height = 2.5}
+```{r plot_visium_adipocyte_insulin_corr_score, fig.width = 5, fig.height = 2.5}
 expr_vals <- c(d_plot$up, d_plot$down)
 d_plot2 <- rbind(d_plot[,c(3:7)], d_plot[,c(3:7)])
 d_plot2$log2_ratio <- expr_vals
 d_plot2$direction <- "down"
 d_plot2[1:8, "direction"] <- "up"
 d_plot2$m_value <- as.character(d_plot2$m_value)
-# d_plot2$sd <- c(se_ins_data_score_sd$up, se_ins_data_score_sd$down)
 
 p1 <- ggplot(subset(d_plot2, cluster=="Adipocyte 1"), aes(x=as.numeric(m_value), y=log2_ratio)) +
   geom_line(aes(group=direction), color = "grey80") +
@@ -1167,10 +1278,10 @@ p2 <- ggplot(subset(d_plot2, cluster=="Adipocyte 2"), aes(x=as.numeric(m_value),
   theme_classic() +
   theme(legend.position = "none")
 
+p <- plot_grid(p1, p2, nrow=1);p
+
 fname <- "bulk_dea_insulin_cage_visium-cluster_corr_scores"
-pdf(file = file.path(DIR_FIG, paste0(fname, ".pdf")), width = 5, height = 2.5, useDingbats = F);
-plot_grid(p1, p2, nrow=1)
-dev.off()
+pdf(file = file.path(DIR_FIG, paste0(fname, ".pdf")), width = 5, height = 2.5, useDingbats = F);p;dev.off()
 ```
 
 
@@ -1197,17 +1308,22 @@ t.test(x_LEP, y_PLIN, paired = TRUE, alternative = "greater")
 
 #### Barplot  
 
-```{r plot_visium_adipocyte_insulin_bars}
+```{r plot_visium_adipocyte_insulin_bars, fig.width=12, fig.height=6}
 #' Create plot data
 df_cage_visium_adi <- rbind(df_cage_visium[1:2], df_cage_visium[1:2])
 df_cage_visium_adi$cluster <- "Adipocyte 1"
 df_cage_visium_adi[1:dim(df_cage_visium)[1], "cluster"] <- "Adipocyte 2"
 
-df_cage_visium_adi <- merge(df_cage_visium_adi, se_ins_data_score_ratio)
+se_ins_ratios_adi_selected <- se_ins_ratios_adi[unique(df_cage_visium_adi$gene), ]
+se_ins_ratios_adi_selected$gene <- rownames(se_ins_ratios_adi_selected)
+
+df_cage_visium_adi <- merge(df_cage_visium_adi, se_ins_ratios_adi_selected, by = "gene")
+
 s_ids <- unique(metadata_ins$subject_id)
+
 for(s in s_ids){
-  col_select <- grep(pattern = s, x = colnames(se_ins_data_score_ratio), value = T)
-  s_data <- se_ins_data_score_ratio[, col_select]
+  col_select <- grep(pattern = s, x = colnames(se_ins_ratios_adi_selected), value = T)
+  s_data <- se_ins_ratios_adi_selected[, col_select]
   s_data$gene <- rownames(s_data)
   
   s_new <- data.frame(subject = c(s_data[, col_select[1]], 
@@ -1265,300 +1381,13 @@ pdf(file = file.path(DIR_FIG, paste0(fname, ".pdf")), width = 12, height = 4, us
 ```
 
 
+### Other plots: All clusters  
 
-<br><br>
-
-## Visium: all cluster data
-
-### Gene expression  
-```{r data_visium_adipocyte_insulin_allclust}
-se_ins_allc <- GetAssayData(se_ins[genes_ins_include,], slot = "data")  # normalized data for genes of interest
-```
-  
-  
-#### Insulin responding genes 
-
-```{r prep_visium_adipocyte_insulin_allclust}
-se_ins_allc_grouped <- data.frame(row.names = rownames(se_ins_allc))
-s_names <- unique(se_ins@meta.data$sample_name)  # metadata_ins$sample_name
-c_ids <- as.character(sort(as.numeric(as.character(unique(se_ins@meta.data$seurat_clusters)))))
-sc_names <- c()
-for(c in c_ids){
-  sc_names <- c(sc_names, paste(c, s_names, sep=".") )
-}
-
-se_ins_metadata_allc <- data.frame(row.names = sc_names,
-                                  insulin_stim = rep(0, length(sc_names)), 
-                                  bmi = rep(0, length(sc_names)), 
-                                  condition = rep("", length(sc_names)), 
-                                  subject_id = rep("", length(sc_names)), 
-                                  m_value = rep(0, length(sc_names)), 
-                                  cluster = rep("", length(sc_names)), 
-                                  stringsAsFactors = F)
-
-for(s in s_names){
-  for(c in c_ids){
-      s_spots <- colnames(subset(se_ins, sample_name == s))
-      c_spots <- colnames(subset(se_ins, seurat_clusters == c))
-      sc_spots <- intersect(c_spots, s_spots)
-      
-      spotn_cutoff <- 10  # originally 1
-      if (length(sc_spots) >= spotn_cutoff) {
-        sc_data <- data.frame(Matrix::rowMeans(se_ins_allc[, sc_spots]))
-      } else if (length(sc_spots) == 0) {
-        # sc_data <- data.frame(se_ins_allc[, sc_spots])  # won't work if no spots
-        # sc_data[,1] <- 0
-        sc_data <- data.frame(value = rep(0, nrow(se_ins_allc)), row.names = rownames(se_ins_allc))
-      } else if (length(sc_spots) == 1) {
-        sc_data <- data.frame(se_ins_allc[, sc_spots])
-        sc_data[,1] <- 0
-      } else {
-        sc_data <- data.frame(Matrix::rowMeans(se_ins_allc[, sc_spots]))
-        sc_data[,1] <- 0
-      }
-      # print(paste(c, s, sep="."))
-      # print(head(sc_data))
-      
-      sc_name <- paste(c, s, sep=".")
-      colnames(sc_data) <- sc_name
-      se_ins_allc_grouped <- cbind(se_ins_allc_grouped, sc_data)
-      se_ins_metadata_allc[sc_name, ] <- metadata_ins[s, c("insulin_stim", "bmi", "condition", "subject_id", "m_value")]
-      se_ins_metadata_allc[sc_name, "cluster"] <- paste0("C", c)
-  }
-}
-
-se_ins_metadata_allc <- se_ins_metadata_allc[colnames(se_ins_allc_grouped), ]
-se_ins_metadata_allc
-head(se_ins_allc_grouped)
-```
-
-
-```{r prep_visium_adipocyte_insulin_allclust_score}
-se_ins_data_score_allc <- rbind(colMeans(se_ins_allc_grouped[ins_up_overlap, ]), 
-                           colMeans(se_ins_allc_grouped[ins_down_overlap, ]))
-rownames(se_ins_data_score_allc) <- c("up", "down")
-# se_ins_data_score_allc
-
-
-# Calculate difference score for each indvidual
-se_ins_data_score_allc_mean <- data.frame()
-se_ins_data_score_allc_ratio <- data.frame()
-for(s in unique(se_ins_metadata_allc$subject_id)){
-  pc <- .01 # pseudo count
-  for(c in c_ids){
-    bool_c_0 <- rownames(se_ins_metadata_allc[(se_ins_metadata_allc$subject_id==s & 
-                                                 se_ins_metadata_allc$cluster==paste0("C",c) & 
-                                                 se_ins_metadata_allc$insulin_stim=="0"),])
-    bool_c_1 <- rownames(se_ins_metadata_allc[(se_ins_metadata_allc$subject_id==s & 
-                                                 se_ins_metadata_allc$cluster==paste0("C",c) & 
-                                                 se_ins_metadata_allc$insulin_stim=="1"),])
-    
-    up_sum_1 <- sum(se_ins_allc_grouped[ins_up_overlap, bool_c_1])
-    up_sum_0 <- sum(se_ins_allc_grouped[ins_up_overlap, bool_c_0])
-    down_sum_1 <- sum(se_ins_allc_grouped[ins_down_overlap, bool_c_1])
-    down_sum_0 <- sum(se_ins_allc_grouped[ins_down_overlap, bool_c_0])
-    
-    
-    ngenes_up_1 <- sum(se_ins_allc_grouped[ins_up_overlap, bool_c_1]>0)
-    ngenes_up_0 <- sum(se_ins_allc_grouped[ins_up_overlap, bool_c_0]>0)
-    ngenes_down_1 <- sum(se_ins_allc_grouped[ins_down_overlap, bool_c_1]>0)
-    ngenes_down_0 <- sum(se_ins_allc_grouped[ins_down_overlap, bool_c_0]>0)
-    
-    if(s=="NK49"){
-    s_c_all <- data.frame("ratio" = c(rowMeans(se_ins_allc_grouped[ins_up_overlap, bool_c_1]+pc) / (se_ins_allc_grouped[ins_up_overlap, bool_c_0]+pc), 
-                                      rowMeans(se_ins_allc_grouped[ins_down_overlap, bool_c_1]+pc) / (se_ins_allc_grouped[ins_down_overlap, bool_c_0]+pc)), 
-                          row.names = c(ins_up_overlap, ins_down_overlap)
-                          )
-    } else {
-      s_c_all <- data.frame("ratio" = c((se_ins_allc_grouped[ins_up_overlap, bool_c_1]+pc) / (se_ins_allc_grouped[ins_up_overlap, bool_c_0]+pc), 
-                                        (se_ins_allc_grouped[ins_down_overlap, bool_c_1]+pc) / (se_ins_allc_grouped[ins_down_overlap, bool_c_0]+pc)), 
-                            row.names = c(ins_up_overlap, ins_down_overlap)
-                            )
-    }
-    
-    if (up_sum_1==0 | up_sum_0==0) {
-      s_c_all[ins_up_overlap, "ratio"] <- 1
-    } 
-    if (down_sum_1==0 | down_sum_0==0){
-      s_c_all[ins_down_overlap, "ratio"] <- 1
-    }
-    
-    gene_cutoff <- 2
-    if (ngenes_up_1 < gene_cutoff | ngenes_up_0 < gene_cutoff) {
-      s_c_all[ins_up_overlap, ] <- 1
-    } 
-    if (ngenes_down_1 < gene_cutoff | ngenes_down_0 < gene_cutoff){
-      s_c_all[ins_down_overlap, ] <- 1
-    }
-    
-    s_clust <- data.frame("up" = mean(s_c_all[ins_up_overlap, "ratio"]), 
-                          "down" = mean(s_c_all[ins_down_overlap, "ratio"]))
-
-    rownames(s_clust) <- colnames(s_c_all) <- paste0(c, ".", s)
-    
-    if(dim(se_ins_data_score_allc_ratio)[1]==0){
-      se_ins_data_score_allc_ratio <- s_c_all
-    } else {
-      se_ins_data_score_allc_ratio <- cbind(se_ins_data_score_allc_ratio, s_c_all)
-    }
-    se_ins_data_score_allc_mean <- rbind(se_ins_data_score_allc_mean, s_clust)
-  }
-}
-```
-
-
-
-
-
-```{r prep_visium_adipocyte_insulin_allclust_score_savetable}
-fname <- "bulk_grouped_cluster_expression-all_clusters_grouped_mean_expr.tsv"
-t_export <- se_ins_allc_grouped
-t_export$gene <- rownames(t_export)
-write.table(x = t_export, file = file.path(DIR_RES, "tables", fname), quote = F, sep = "\t", row.names = F)
-
-
-fname <- "bulk_grouped_cluster_expression_log2ratios-all_clusters_heatmap_log2ratio.tsv"
-t_export <- log2(se_ins_data_score_allc_ratio)
-t_export$gene <- rownames(t_export)
-write.table(x = t_export, file = file.path(DIR_RES, "tables", fname), quote = F, sep = "\t", row.names = F)
-
-
-fname <- "bulk_grouped_cluster_expression_log2ratios-all_clusters_heatmap_log2ratio_mean.tsv"
-t_export <- log2(se_ins_data_score_allc_mean)
-t_export$cluster_subject <- rownames(t_export)
-write.table(x = t_export, file = file.path(DIR_RES, "tables", fname), quote = F, sep = "\t", row.names = F)
-```
-  
-  
-  
-
-### Heatmap
-
-```{r hm_all_clus_colors}
-cols_allc <- rep("grey80", length(c_ids))
-names(cols_allc) <- paste0("C", c_ids)
-cols_allc[c("C5", "C4")] <- colors_adi[c("Adipocyte 2", "Adipocyte 1")] # c("#F768A1", "#FBB4B9")
-
-my_colour_allc = list(
-    condition = c(lean = colors_main[1], obese = colors_main[2]),
-    insulin_stim = c(`0` = colors_insulin[1], `1` = colors_insulin[2]),
-    subject_id = c("NK49" =  colors_multi[3],
-                   "NK50" =  colors_multi[4],
-                   "NO137" = colors_multi[5],
-                   "NO148" = colors_multi[6]),
-    m_value = colors_mval,
-    cluster = cols_allc,
-    regulation = c(down = color_low, up = color_high)
-)
-```
-
-
-```{r plot_visium_adipocyte_insulin_hm_score_metadata_allclust}
-my_gene_col <- data.frame("regulation" = df_cage_visium[genes_ins_include, c("reg")], 
-                          row.names = rownames(df_cage_visium[genes_ins_include,]))
-
-my_sample_col_allc <- se_ins_metadata_allc[, c("insulin_stim", 
-                                               "condition",
-                                               "subject_id",
-                                               "m_value",
-                                               "cluster")]
-my_sample_col_allc$insulin_stim <- as.character(my_sample_col_allc$insulin_stim)
-
-my_sample_col_allc <- my_sample_col_allc %>%
-  group_by(subject_id) %>%
-  dplyr::top_n(n=1, wt = insulin_stim)
-
-my_sample_col_allc <- my_sample_col_allc[,-1]
-my_sample_col_allc <- as.data.frame(my_sample_col_allc)
-
-my_sample_col_allc$rname <- paste0("0.", my_sample_col_allc[, "subject_id"])
-for(c in c_ids){
-  rows_incl <- rownames(my_sample_col_allc[my_sample_col_allc$cluster==paste0("C",c), ]) 
-  my_sample_col_allc[rows_incl, "rname"] <- paste0(c, ".", my_sample_col_allc[rows_incl, "subject_id"])
-}
-
-# se_ins_data_score_mean
-my_sample_col_allc <- my_sample_col_allc[!duplicated(my_sample_col_allc$rname), ]
-rownames(my_sample_col_allc) <- my_sample_col_allc$rname
-my_sample_col_allc
-```
-
-
-```{r plot_hm_all_clusters_log2ratio, fig.width=16, fig.height=8}
-fname <- "bulk_dea_insulin_cage_visium-all_clusters_heatmap_log2ratio"
-pdf(file = file.path(DIR_FIG, paste0(fname, ".pdf")), width = 16, height = 8, useDingbats = F);
-breaksList <- seq(-2, 2, by = 0.01)
-pheatmap(
-   mat = (log2(se_ins_data_score_allc_ratio)),  # se_ins_data_grouped, data_hm_norm
-   annotation_colors = my_colour_allc,
-   annotation_col = my_sample_col_allc[,c(2,3,4)],
-   annotation_row = my_gene_col,
-   cluster_rows = T,
-   breaks = breaksList,
-   color = colorRampPalette(c(color_low2, "white", color_high))(length(breaksList)-1),
-   border_color = "white"
-   )
- dev.off()
-```
-
-
-```{r plot_visium_adipocyte_insulin_hm_score_mean_allc, fig.width=4, fig.height=12}
-fname <- "bulk_dea_insulin_cage_visium-all_clusters_heatmap_log2ratio_mean"
-pdf(file = file.path(DIR_FIG, paste0(fname, ".pdf")), width = 4.5, height = 12, useDingbats = F)
-breaksList <- seq(-2.5, 2.5, by = 0.1)
-pheatmap((log2(se_ins_data_score_allc_mean)),  # se_ins_data_grouped, data_hm_norm
-         annotation_colors = my_colour_allc,
-         annotation_row = my_sample_col_allc[,c(2,3,4)],
-         # annotation_row = my_gene_col,
-         cluster_rows = T,
-         cluster_cols = F,
-         breaks = breaksList,
-         color = colorRampPalette(c(color_low2, "white", color_high))(length(breaksList)-1),
-         border_color = "white"
-         )
-dev.off()
-```
-
-
-Only adipocytes PLIN and LEP  
-
-```{r plot_visium_adipocyte_insulin_hm_score_mean, fig.width=4.5, fig.height=8}
-
-ph_plot <- log2(se_ins_data_score_allc_ratio)
-ph_plot <- ph_plot[, c(grep("^5.", colnames(ph_plot), value = T), grep("^4.", colnames(ph_plot), value = T))]
-colnames(ph_plot) <- sub("^5.", "LEP.", colnames(ph_plot))
-colnames(ph_plot) <- sub("^4.", "PLIN.", colnames(ph_plot))
-
-ph_plot <- ph_plot[, rownames(my_sample_col_2[order(my_sample_col_2$cluster, my_sample_col_2$m_value),]) ]
-
-
-fname <- "bulk_dea_insulin_cage_visium-all_cluster_heatmap_log2ratio_adipocytes"
-pdf(file = file.path(DIR_FIG, paste0(fname, ".pdf")), width = 4.6, height = 8, useDingbats = F);
-
-breaksList <- seq(-4, 4, by = 0.5)
-pheatmap(ph_plot,
-         annotation_colors = my_colour,
-         annotation_col = my_sample_col_2[order(my_sample_col_2$cluster, my_sample_col_2$m_value), c(3,4)],
-         annotation_row = my_gene_col, 
-         cluster_rows = T,
-         cluster_cols = F,
-         gaps_col = 4,
-         breaks = breaksList,
-         color = colorRampPalette(c(color_low2, "white", color_high))(length(breaksList)-1),
-         border_color = "white"
-         )
-dev.off()
-```
-
-
-
-### Box plot
+#### Boxplot
 
 ```{r plot_visium_adipocyte_insulin_box_score_allc, fig.width=12, fig.height=4}
-d_plot <- cbind(log2(se_ins_data_score_allc_mean), my_sample_col_allc)
+d_plot <- cbind(output_mean_log2ratio[,1:2], my_sample_col_allc)
 d_plot$order <- rep(seq(1:19), 4)
-d_plot[d_plot$up==0,"up"] <- NA
-d_plot[d_plot$down==0,"down"] <- NA
 
 p1 <- ggplot(d_plot, aes(x=reorder(cluster, order) , y=up))+
   geom_hline(yintercept = c(seq(-3,3,1),4), linetype="solid", color = "grey90") +
@@ -1588,12 +1417,16 @@ p2 <- ggplot(d_plot, aes(x=reorder(cluster, order), y=down)) +
   theme_classic() +
   theme(legend.position = "bottom")
 
-fname <- "bulk_dea_insulin_cage_visium-all_cluster_box_scores"
-pdf(file = file.path(DIR_FIG, paste0(fname, ".pdf")), width = 12, height = 4, useDingbats = F);
-plot_grid(p1, p2, nrow=1)
-dev.off()
-```
+p <- plot_grid(p1, p2, nrow=1)
 
+fname <- "bulk_dea_insulin_cage_visium-all_cluster_box_scores"
+pdf(file = file.path(DIR_FIG, paste0(fname, ".pdf")), width = 12, height = 4, useDingbats = F);p;dev.off()
+```
+  
+<br>
+
+  
+**Z-Score of log2-ratio**  
 
 ```{r plot_visium_adipocyte_insulin_box_score_allc_new, fig.width=4, fig.height=3}
 canno_merge <- canno_ins
@@ -1601,10 +1434,8 @@ canno_merge$cluster <- paste0("C", canno_ins$seurat_clusters)
 c_keep <- subset(canno_merge, cluster_group %in% c("Adipocyte", "Fibroblast/Pread", "Vascular"))$cluster
 
 
-d_plot <- cbind(log2(se_ins_data_score_allc_mean), my_sample_col_allc)
+d_plot <- cbind(output_mean_log2ratio[,1:2], my_sample_col_allc)
 d_plot$order <- rep(seq(1:19), 4)
-d_plot[d_plot$up==0,"up"] <- NA
-d_plot[d_plot$down==0,"down"] <- NA
 d_plot$up_score <- (d_plot$up - mean(d_plot$up, na.rm = T)) / sd(d_plot$up, na.rm = T)
 
 d_plot <- subset(d_plot, cluster %in% c_keep)
@@ -1645,18 +1476,17 @@ png(file.path(DIR_FIG, paste0(fname1, ".png")), width = 4*png_res, height = 3*pn
 fname2 <- "bulk_dea_insulin_cage_visium-all_cluster_box_scores_selected-b"
 png(file.path(DIR_FIG, paste0(fname2, ".png")), width = 4*png_res, height = 3*png_res, res = png_res);p2;dev.off()
 
-
 fname <- "bulk_dea_insulin_cage_visium-all_cluster_box_scores_selected.csv"
 write.csv(d_plot2, file.path(DIR_RES, "tables", fname), quote = F, row.names = F)
-
 ```
-
-
 
 <br><br>
 
 
 # Wrap up
+  
+This analysis was last compiled on `r Sys.Date()`.
+
   
 ## Session information  
   
