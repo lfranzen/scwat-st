@@ -37,7 +37,7 @@ The main data processing/analysis steps include the following:
 1. **Initialize**: Set up Seurat object and perform initial filtering of spots and genes  
 2. **QC**: Further filter spots and genes based on specified criteria  
 3. **SCTransform**: Peform normalization and scaling of the data using the 7000 most variable genes across the data points  
-4. **Dimensionality reduction**: Independent Component Analysis (ICA) followed by [Harmony](https://portals.broadinstitute.org/harmony/articles/quickstart.html) (v 1.0) to remove subject an batch differences. The Harmony vectors, of which some uninformative vectors had been excluded, were used as input for UMAP and cluster analysis   
+4. **Dimensionality reduction**: Independent Component Analysis (ICA) followed by [Harmony](https://portals.broadinstitute.org/harmony/articles/quickstart.html) (v 1.0) to remove subject, batch, and insulin effect differences. The Harmony vectors, of which some uninformative vectors had been excluded, were used as input for UMAP and cluster analysis   
 5. **Clustering**: Performed using the `FindNeighbors()` and `FindClusters(algorithm = 1, resolution = k)` (Louvain) functions. Clustering resolution *k* = 0.9 was selected after manual inspection of various resolution alternatives  
 6. **Marker genes**: Cluster markers were identified using the `FindMarkers()` and `FindAllMarkers(only.pos = TRUE, min.pct = 0.1, logfc.threshold = 0.15)` functions  
   
@@ -50,7 +50,6 @@ The main data processing/analysis steps include the following:
 
 # Initialize  
 
-set.seed(42)
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(
@@ -767,11 +766,19 @@ dev.off()
 
 ```{r dimred_umap_plot, fig.width=10, fig.height=8.5}
 pt_size <- 0.5
-p1 <- DimPlot(object = se, dims = c(1,2), reduction = "umap", group.by = "subject_alias", pt.size = pt_size, cols = colors_multi) + NoAxes() #+ DarkTheme()
-p2 <- DimPlot(object = se, dims = c(1,2), reduction = "umap", group.by = "condition", pt.size = pt_size, cols = colors_multi) + NoAxes() #+ DarkTheme()
-p3 <- FeaturePlot(object = se, dims = c(1,2), reduction = "umap", features = "nCount_RNA", pt.size = pt_size, cols = c("grey90", "red"), max.cutoff = 5000) + NoAxes()
-p4 <- FeaturePlot(object = se, dims = c(1,2), reduction = "umap", features = "nFeature_RNA", pt.size = pt_size, cols = c("grey90", "red")) + NoAxes()
+p1 <- DimPlot(object = se, dims = c(1,2), reduction = "umap", group.by = "subject_alias", 
+              pt.size = pt_size, cols = colors_multi) + NoAxes() #+ DarkTheme()
+p2 <- DimPlot(object = se, dims = c(1,2), reduction = "umap", group.by = "condition", 
+              pt.size = pt_size, cols = colors_multi) + NoAxes() #+ DarkTheme()
+p3 <- FeaturePlot(object = se, dims = c(1,2), reduction = "umap", features = "nCount_RNA", 
+                  pt.size = pt_size, cols = c("grey90", "red"), max.cutoff = 5000) + NoAxes()
+p4 <- FeaturePlot(object = se, dims = c(1,2), reduction = "umap", features = "nFeature_RNA", 
+                  pt.size = pt_size, cols = c("grey90", "red")) + NoAxes()
 p <- (p1-p2)/(p3-p4);p
+
+fname <- paste0(ANALYSIS_ID, ".dimred_umap_harmony")
+pdf(file = file.path(DIR_FIG, paste0(fname, ".pdf")), width = 10, height = 8.5);p;dev.off()
+tiff(filename = file.path(DIR_FIG, paste0(fname, ".tiff")), units = "cm", width = 10*2.5, height = 8.5*2.5, res = 600); p; dev.off()
 ```
 
 ```{r dimred_umap_plot_genes, fig.width=10, fig.height=8.5}
@@ -848,7 +855,7 @@ se_markers <- merge(x = se_markers, y = c_anno, by.x="cluster", by.y="seurat_clu
   
 ### UMAP  
 
-```{r clustering_setres_plot, fig.width=6, fig.height=4}
+```{r clustering_setres_plot, fig.width=12, fig.height=8}
 dims_test <- paste0("SCT_snn_res.", c(0.8, 0.9, 1, 1.2, 1.6, 2))
 DimPlot(object = se, dims = c(1,2), reduction = "umap", group.by = dims_test, 
         pt.size = 0.5,
