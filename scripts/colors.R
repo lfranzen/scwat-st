@@ -20,7 +20,7 @@ colors_multi <- c("#a5d7e5",
                   "#fb7272",
                   "grey50")
 colors_insulin <- c("#badce6", "#54a2b8")
-colors_mval <- c("5.71" = "#a6dbbb",  #brewer.pal(5, "YlGn")[2]
+colors_mval <- c("5.71" = "#a6dbbb",
                  "7" = "#3cb67b",
                  "9.29" = "#359566",
                  "12.4" = "#2e7651")
@@ -35,14 +35,7 @@ color_high <- "#3CB67B"
 color_high2 <- "#1D793D"
 colors_ramp <- colorRampPalette(colors = c(color_low, color_high))
 
-# color_func_blue <- colorRampPalette(colors = c("#ccebf0", "#3083a7"))  # "#3097a7"
-# color_func_blue <- colorRampPalette(colors = c("#C6DBEF", "#075a84"))  # "#3097a7"
-# color_func_orange <- colorRampPalette(colors = c("#ffe2b4", "#e58f01"))
-# color_func_pink <- colorRampPalette(colors = c("#edbbcb", "#ca436c"))
-# color_func_green <- colorRampPalette(colors = c("#daefcb", "#639343"))  # "#77c544"
-# color_func_purp <- colorRampPalette(colors = c("#ecd9f1", "#967bce"))
-
-#' Update 'viridis' colors
+#' Update witth 'viridis' colors
 color_func_blue <- colorRampPalette(colors = c("#C6DBEF", "#075a84"))
 color_func_orange <- colorRampPalette(colors = c("#F3E55C", "#E8602D"))
 color_func_pink <- colorRampPalette(colors = c("#bfabc3", "#62376e"))
