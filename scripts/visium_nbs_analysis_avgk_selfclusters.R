@@ -162,8 +162,8 @@ colors_clusters <- se@meta.data[, c("seurat_clusters", "cluster_anno", "cluster_
   dplyr::distinct() %>%
   dplyr::arrange(seurat_clusters)
 
-pdf(file.path(DIR_OUT, "../figures", paste0("nbs_cluster_k.spatial.", ANALYSIS, ".pdf")), width = 12, height = 9, useDingbats = F)
-for(cluster_view in c("1", "4", "5", "6", "7", "12", "14", "17")){
+pdf(file.path(DIR_OUT, "../figures", paste0("nbs_cluster_k.spatial2.", ANALYSIS, ".pdf")), width = 12, height = 9, useDingbats = F)
+for(cluster_view in as.character(sort(unique(se$seurat_clusters))) ){  #c("1", "4", "5", "6", "7", "12", "14", "17")
   spatnet.subset <- subset(spatnet, cluster_from %in% cluster_view)
   spatnet.subset_conly <- subset(spatnet.subset, cluster_to %in% cluster_view)
 
@@ -181,12 +181,12 @@ dev.off()
 
 #####
 #' Count avgerage degree (k_avg)
-N <- length(unique(c(spatnet.subset$from)))
-ki <- spatnet.subset_conly %>%
-  dplyr::group_by(from) %>%
-  dplyr::count(name = "ki")
-L <- sum(ki$ki)/2
-k_avg <- (2*L)/N
+# N <- length(unique(c(spatnet.subset$from)))
+# ki <- spatnet.subset_conly %>%
+#   dplyr::group_by(from) %>%
+#   dplyr::count(name = "ki")
+# L <- sum(ki$ki)/2
+# k_avg <- (2*L)/N
 
 
 #' Calculate avg degree for all samples and clusters
@@ -385,28 +385,74 @@ p1 <- ggplot(df_kavg_zscore_long, aes(x=reorder(cluster, value), y=value)) +
   theme_classic()
 pdf(file.path(DIR_OUT, "../figures", paste0("nbs_cluster_kavg-perm_zscore_boxplot.", ANALYSIS, ".pdf")), width = 3, height = 3.5, useDingbats = F);p1;dev.off()
 
+  
+
 
 # ===================================
 #' EXTRA PLOTS
-#' Plot network for figure schematic:
+#' Plot networks for manuscript figures:
 
 # OBSERVED
-for(cluster_view in c("6")){
-  for(sample_view in "4"){
+
+subjects_include <- c("S44", "S46", "S49", "S50", "S51", "S55")  # sample_conv[sample_conv$novaseq_id %in% c("S44", "S46", "S49", "S50", "S51", "S55"), "sample"])
+clusters_include <- c(6, 8, 9, 10, 11, 14, 18, 19, 20)
+
+for(sample_novaseq in subjects_include) {  # 6
+  pdf(file.path(DIR_OUT, "../figures", paste0("nbs_cluster_k.spatial_observed_example_", sample_novaseq, "." , ANALYSIS, ".pdf")), width = 8, height = 7.5, useDingbats = F)
+  
+  for(cluster_view in clusters_include){  # 4
+    sample_view <- gsub("S", "", sample_conv[sample_conv$novaseq_id == sample_novaseq, "sample"])
+    
     spatnet.subset <- subset(spatnet, cluster_from %in% cluster_view & sample %in% sample_view)
     spatnet.subset_conly <- subset(spatnet.subset, cluster_to %in% cluster_view & sample %in% sample_view)
     
+    N <- length(unique(c(spatnet.subset$from)))
+    ki <- spatnet.subset_conly %>%
+      dplyr::group_by(from) %>%
+      dplyr::count(name = "ki")
+    
+    spatnet.subset_ki <- spatnet.subset
+    spatnet.subset_ki <- merge(spatnet.subset_ki, as.data.frame(ki), by="from", all=T)
+    spatnet.subset_ki[is.na(spatnet.subset_ki$ki), "ki"] <- 0
+    
     p_ob <- ggplot() +
-      geom_point(data = spatnet.subset, aes(start_x, -start_y, color = cluster_from), size = .5) +
-      geom_segment(data = spatnet.subset_conly, aes(x = start_x, xend = end_x, y = -start_y, yend = -end_y), size=0.3) +
-      labs(color="", title = paste("sample", sample_view, " - cluster", cluster_view)) +
-      scale_color_manual(values = colors_clusters[colors_clusters$seurat_clusters==cluster_view,"cluster_color"]) +
+      geom_segment(data = spatnet.subset_conly, aes(x = start_x, xend = end_x, y = -start_y, yend = -end_y), color = "white", size=0.3) +
+      geom_point(data = spatnet.subset_ki, aes(start_x, -start_y, color = as.factor(ki)), size = 1) +
+      labs(color="", title = paste("sample", sample_novaseq, " - cluster", cluster_view)) +
+      # scale_color_manual(values = colors_clusters[colors_clusters$seurat_clusters==cluster_view, "cluster_color"]) +
+      scale_color_manual(values = viridis::viridis(7)) +
+      xlim(c(0,2000)) +
+      ylim(c(0,-2000)) +
       theme_void() +
-      NoLegend()
+      theme(panel.background = element_rect(fill = "black"))
+      # NoLegend()
     print(p_ob)
+    
+    write.table(spatnet.subset_ki, file.path(DIR_OUT, "../tables/nbs_kavg_plot_tables", paste0("nbs_cluster_k.spatial_observed_example_", sample_novaseq, "-C", cluster_view, "_spatnetSubsetKi." , ANALYSIS, ".tsv")),
+                sep = "\t", row.names = T, col.names = T, quote = F)
+    write.table(spatnet.subset_conly, file.path(DIR_OUT, "../tables/nbs_kavg_plot_tables", paste0("nbs_cluster_k.spatial_observed_example_", sample_novaseq, "-C", cluster_view, "_spatnetSubsetCOnly." , ANALYSIS, ".tsv")),
+                sep = "\t", row.names = T, col.names = T, quote = F)
+
+    # pdf(file.path(DIR_OUT, "../figures", paste0("nbs_cluster_k.spatial_observed_example_S", sample_novaseq, "-C", cluster_view, "." , ANALYSIS, ".pdf")), width = 4, height = 3.5, useDingbats = F);p_ob;dev.off()
   }
+  dev.off()
 }
-pdf(file.path(DIR_OUT, "../figures", paste0("nbs_cluster_k.spatial_observed_example.", ANALYSIS, ".pdf")), width = 3, height = 3.5, useDingbats = F);p_ob;dev.off()
+
+# pdf(file.path(DIR_OUT, "../figures", paste0("nbs_cluster_k.spatial_observed_example_S", sample_view, "-C", cluster_view, "." , ANALYSIS, ".pdf")), width = 4, height = 3.5, useDingbats = F);p_ob;dev.off()
+
+
+ggplot() +
+  geom_segment(data = spatnet.subset_conly, aes(x = start_x, xend = end_x, y = -start_y, yend = -end_y), color = "white", size=0.3) +
+  geom_point(data = spatnet.subset_ki, aes(start_x, -start_y, color = as.factor(ki)), size = 1.5) +
+  labs(color="", title = paste("sample", sample_novaseq, " - cluster", cluster_view)) +
+  scale_color_manual(values = viridis::viridis(7)) +
+  # scale_x_continuous(limits = c(0,2000)) +
+  # scale_y_continuous(limits = c(0,-2000)) +
+  xlim(c(0,2000)) +
+  ylim(c(0,-2000)) +
+  theme_void() +
+  theme(panel.background = element_rect(fill = "black"))
+
 
 
 # ===================================
