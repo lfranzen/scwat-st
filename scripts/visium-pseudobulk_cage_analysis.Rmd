@@ -152,21 +152,6 @@ datatable(metadata, rownames = F, options = list(scrollX = TRUE), caption = "Sam
 <br><br>
   
   
-### Gene information
-
-Gene information is obtained from a separate table containing the human genome with ensembl ids, hgnc symbols, and gene biotype.  
-
-```{r read_genes} 
-gene_table <- as.data.frame( read.delim(file = file.path(DIR_DATA, "gene_annotation", "genes.tsv"), stringsAsFactors = F))
-
-gene_table$gene_id <- gsub(pattern = "\\.[0-9]*", replacement = "", x = gene_table$gene_id)
-rownames(gene_table) <- gene_table$gene_id
-
-head(gene_table)
-```
-
-<br><br>
-
   
 # Pseudo-bulk analysis
   
@@ -176,7 +161,7 @@ To get the bulk data, the gene expression across all spots within a sample will 
   
   
 ### Baseline visium data  
-
+  
 ```{r pool_data_per_sample_base}
 metadata_base <- subset(metadata, insulin_stim == 0 | is.na(insulin_stim))
 
@@ -226,7 +211,7 @@ head(bulk_data_ins)
 ```{r save_bulk_data_ins}
 write.table(x = bulk_data_ins, file = file.path(DIR_RES, "tables", "pseudobulk_visium.insulin.tsv"), quote = F, sep = "\t", row.names = T)
 ```
-  
+<br><br>
   
   
 ## Differential gene expression
@@ -236,10 +221,11 @@ I'll perform the DE analysis using the DESeq2 R package. Vignette available [her
 The lean/obese comparison will be made using data from all samples which haven't been subjected to insulin treatment. The male subjects are not included for now, to make the comparison more fair.  
   
 The insulin untreated/treated comparison is made using the samples from individuals who have been subjected to insulin treatment and where tissue samples were collected before and afterwards. This data is therefore paired, which will be taken into account in the design formula.  
-
-
+  
+  
+  
 ### Column data  
-
+  
 ```{r de_design_oble}
 #' Coldata/Design for obese vs lean
 de_des_oble <- subset(metadata_base, (bmi < 28.0 | bmi > 30.0), c("condition", "gender", "date_exp", "tissue_id", "subject_id", "subject_alias"))
@@ -258,18 +244,18 @@ de_des_ins
 ```
 
 <br><br>
-
+  
+  
 ### Lean vs obese
 
 Performing DEA based on 'condition', with 'date_exp' specified as covariates (add 'gender' if both male and female subjects are included).
-
-
+  
+  
 #### DESeq2
 
 ```{r deseq_oble, message=TRUE}
 s_oble <- rownames(de_des_oble)
 d_oble <- bulk_data_base[, s_oble]
-# rownames(d_oble) <- gene_table[rownames(d_oble), "gene_name_2"]
 
 dds_oble <- DESeqDataSetFromMatrix(countData = d_oble,
                                    colData = de_des_oble,
@@ -776,7 +762,7 @@ fname <- "bulk_dea_insulin_cage_visium_log2fc"
 pdf(file = file.path(DIR_FIG, paste0(fname, ".pdf")), width = 8, height = 8, useDingbats = F);p;dev.off()
 tiff(filename = file.path(DIR_FIG, paste0(fname, ".tiff")), units = "cm", width = 8*2.5, height = 8*2.5, res = 600); p; dev.off()
 ```
-
+<br><br>
   
   
 # Cluster response to insulin treatment  
