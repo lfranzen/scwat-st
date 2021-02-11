@@ -1,5 +1,6 @@
 ########################
-#' Cluster neighbourhood analysis
+#' Betweeen-cluster analysis
+#' 
 #' Identify cluster-cluster neighbours. Visualize adjacency matrices as graphs and heatmaps. 
 #' 
 #' L. Franzén, lovisa.franzen@scilifelab.se

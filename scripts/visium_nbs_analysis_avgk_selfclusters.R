@@ -1,5 +1,8 @@
 ########################
-#' Visium neighbourhood analysis of cluster community formation ("self-clustering") by computing average degree for each sample
+#' Within-cluster analysis
+#' 
+#' Visium neighbourhood analysis of cluster community formation or aggregation ("self-clustering") 
+#' by computing the average degree for each cluster and sample
 #' 
 #' L. Franzén, lovisa.franzen@scilifelab.se
 #' Jan 2020
