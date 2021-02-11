@@ -63,9 +63,11 @@ knitr::opts_chunk$set(
 set.seed(42)
 
 #' Load libs
+# devtools::install_version("Rcpp", version = "1.0.4.6", repos = "http://cran.us.r-project.org")
 # devtools::install_version(package = 'Seurat', version = package_version('3.2.0'))
 # devtools::install_version(package = 'sctransform', version = package_version('0.2.1'))
 # devtools::install_version(package = 'ica', version = package_version('1.0-2))
+
 
 library(Matrix)
 library(tidyr)
@@ -304,7 +306,7 @@ paste("k (spots):", dim(se@reductions$umap@cell.embeddings)[1])
   
   
 ```{r read_ori_se, include=FALSE}
-#' Read in original se object in case minor random changes in the ICA/UMAP has occurred
+#' Read in original se object in case minor random changes in the SCTransform/ICA/UMAPICA/UMAP has occurred
 se <- readRDS(file = file.path(DIR_DATA, "se-object.visium_insulin_ori.rds"))
 se@tools$Staffli@imgs <- infoTable$imgs
 ```
@@ -692,7 +694,7 @@ p <- VlnPlot(se,
   geom_boxplot(width=0.2, outlier.size = .5);p
 
 fname <- paste0(ANALYSIS_ID, ".qc_stats_violin")
-pdf(file = file.path(DIR_FIG, paste0(fname, ".pdf")), width = 6, height = 4);p;dev.off()
+pdf(useDingbats = F, file = file.path(DIR_FIG, paste0(fname, ".pdf")), width = 6, height = 4);p;dev.off()
 ```
   
 ```{r qc_stats_violin2,fig.width=4, fig.height=4}
@@ -717,7 +719,7 @@ p <- ggplot(d_plot3, aes(x=qc_stat, y=qc_value)) +
   theme(plot.title = element_text(hjust=0.5, face = "bold"), legend.position = "none", legend.title = element_blank());p
 
 fname <- paste0(ANALYSIS_ID, ".qc_stats_violin2")
-pdf(file = file.path(DIR_FIG, paste0(fname, ".pdf")), width = 3, height = 3);p;dev.off()
+pdf(useDingbats = F, file = file.path(DIR_FIG, paste0(fname, ".pdf")), width = 3, height = 3);p;dev.off()
 ```
   
 ```{r qc_stats_spatial, fig.width=20, fig.height=12}
@@ -731,7 +733,7 @@ p5 <- ST.FeaturePlot(se, features = c("percent.RP"), dark.theme = F, cols = colo
 p <- (p1+p2+p3)/(p4+p5+patchwork::plot_spacer());p
 
 fname <- paste0(ANALYSIS_ID, ".qc_stats_spatial")
-pdf(file = file.path(DIR_FIG, paste0(fname, ".pdf")), width = 32, height = 18);p;dev.off()
+pdf(useDingbats = F, file = file.path(DIR_FIG, paste0(fname, ".pdf")), width = 32, height = 18);p;dev.off()
 tiff(filename = file.path(DIR_FIG, paste0(fname, ".tiff")), units = "cm", width = 32*2.8, height = 18*2.8, res = 600); p; dev.off()
 ```
 
@@ -742,7 +744,7 @@ tiff(filename = file.path(DIR_FIG, paste0(fname, ".tiff")), units = "cm", width 
 ### ICA 
 ```{r dimred_ica_hm, fig.width = 8, fig.height = 12}
 fname <- paste0(ANALYSIS_ID, ".dimred_ica_hm")
-pdf(file = file.path(DIR_FIG, paste0(fname, ".pdf")), width = 14, height = 20)
+pdf(useDingbats = F, file = file.path(DIR_FIG, paste0(fname, ".pdf")), width = 14, height = 20)
 p1 <- DimHeatmap(se, dims = 1:18, cells = 500, nfeatures = 16, balanced = TRUE, reduction = "ica", ncol = 3);p1
 p2 <- DimHeatmap(se, dims = 19:36, cells = 500, nfeatures = 16, balanced = TRUE, reduction = "ica", ncol = 3);p2
 p3 <- DimHeatmap(se, dims = 37:50, cells = 500, nfeatures = 16, balanced = TRUE, reduction = "ica", ncol = 3);p3
@@ -754,7 +756,7 @@ dev.off()
 
 ```{r dimred_harmony_hm, fig.width = 8, fig.height = 12}
 fname <- paste0(ANALYSIS_ID, ".dimred_harmony_hm")
-pdf(file = file.path(DIR_FIG, paste0(fname, ".pdf")), width = 14, height = 20)
+pdf(useDingbats = F, file = file.path(DIR_FIG, paste0(fname, ".pdf")), width = 14, height = 20)
 p1 <- DimHeatmap(se, dims = 1:18, cells = 500, nfeatures = 16, balanced = TRUE, reduction = "harmony", ncol = 3);p1
 p2 <- DimHeatmap(se, dims = 19:36, cells = 500, nfeatures = 16, balanced = TRUE, reduction = "harmony", ncol = 3);p2
 p3 <- DimHeatmap(se, dims = 37:50, cells = 500, nfeatures = 16, balanced = TRUE, reduction = "harmony", ncol = 3);p3
@@ -777,10 +779,23 @@ p4 <- FeaturePlot(object = se, dims = c(1,2), reduction = "umap", features = "nF
 p <- (p1-p2)/(p3-p4);p
 
 fname <- paste0(ANALYSIS_ID, ".dimred_umap_harmony")
-pdf(file = file.path(DIR_FIG, paste0(fname, ".pdf")), width = 10, height = 8.5);p;dev.off()
+pdf(useDingbats = F, file = file.path(DIR_FIG, paste0(fname, ".pdf")), width = 10, height = 8.5);p;dev.off()
 tiff(filename = file.path(DIR_FIG, paste0(fname, ".tiff")), units = "cm", width = 10*2.5, height = 8.5*2.5, res = 600); p; dev.off()
 ```
+  
+```{r dimred_umap_plot_qc, fig.width=10, fig.height=8.5}
+pt_size <- 0.25
+p1 <- DimPlot(object = se, dims = c(1,2), reduction = "umap", group.by = "subject_alias", pt.size = pt_size, cols = colors_multi) + NoAxes() #+ DarkTheme()
+p2 <- DimPlot(object = se, dims = c(1,2), reduction = "umap", group.by = "condition", pt.size = pt_size, cols = colors_multi) + NoAxes() #+ DarkTheme()
+p3 <- FeaturePlot(object = se, dims = c(1,2), reduction = "umap", features = "nCount_RNA", pt.size = pt_size, cols = c("grey90", "red"), max.cutoff = 5000) + NoAxes()
+p4 <- FeaturePlot(object = se, dims = c(1,2), reduction = "umap", features = "nFeature_RNA", pt.size = pt_size, cols = c("grey90", "red")) + NoAxes()
+p <- (p1-p2)/(p3-p4);p
 
+fname <- paste0(ANALYSIS_ID, ".dimred_umap_qc_stats")
+pdf(useDingbats = F, file = file.path(DIR_FIG, paste0(fname, ".pdf")), width = 10, height = 8.5);p;dev.off()
+tiff(filename = file.path(DIR_FIG, paste0(fname, ".tiff")), units = "cm", width = 10*2.5, height = 8.5*2.5, res = 600); p; dev.off()
+```
+  
 ```{r dimred_umap_plot_genes, fig.width=10, fig.height=8.5}
 pt_size <- 0.25
 plot_gene_umap <- function(se, gene, pt_size = 0.1){
@@ -813,7 +828,7 @@ p3 <- DimPlot(object = se, dims = c(1,2), reduction = "umapICA", group.by = "ins
 p <- (p1+p2+p3);p
 
 fname <- paste0(ANALYSIS_ID, ".dimred_umap_ica")
-pdf(file = file.path(DIR_FIG, paste0(fname, ".pdf")), width = 16, height = 5);p;dev.off()
+pdf(useDingbats = F, file = file.path(DIR_FIG, paste0(fname, ".pdf")), width = 16, height = 5);p;dev.off()
 tiff(filename = file.path(DIR_FIG, paste0(fname, ".tiff")), units = "cm", width = 16*2.5, height = 5*2.5, res = 600); p; dev.off()
 ```
 
@@ -827,7 +842,7 @@ tiff(filename = file.path(DIR_FIG, paste0(fname, ".tiff")), units = "cm", width 
 p <- clustree(se, prefix = "SCT_snn_res.", node_colour = "grey70");p
 
 fname <- paste0(ANALYSIS_ID, ".clustering_clustree")
-pdf(file = file.path(DIR_FIG, paste0(fname, ".pdf")), width = 12, height = 10);p;dev.off()
+pdf(useDingbats = F, file = file.path(DIR_FIG, paste0(fname, ".pdf")), width = 12, height = 10);p;dev.off()
 ```
   
   
@@ -844,7 +859,7 @@ p <- ggplot(c_anno, aes(seurat_clusters, 0, color = cluster_anno)) +
         axis.title.y = element_blank(), axis.ticks.y = element_blank(), axis.text.y = element_blank(), axis.line.y = element_blank());p
 
 fname <- paste0(ANALYSIS_ID, ".clustering_annotationlegend")
-pdf(file = file.path(DIR_FIG, paste0(fname, ".pdf")), width = 10, height = 2);p;dev.off()
+pdf(useDingbats = F, file = file.path(DIR_FIG, paste0(fname, ".pdf")), width = 10, height = 2);p;dev.off()
 ```
   
 ```{r clustering_annotation_add}
@@ -881,11 +896,11 @@ p2 <- DimPlot(object = se,
   NoAxes();
 
 fname <- paste0(ANALYSIS_ID, ".clustering_umap")
-pdf(file = file.path(DIR_FIG, paste0(fname, ".pdf")), width = 6, height = 5);p;dev.off()
+pdf(useDingbats = F, file = file.path(DIR_FIG, paste0(fname, ".pdf")), width = 6, height = 5);p;dev.off()
 tiff(filename = file.path(DIR_FIG, paste0(fname, ".tiff")), units = "cm", width = 6*2.5, height = 5*2.5, res = 600); p; dev.off()
 
 fname <- paste0(ANALYSIS_ID, ".clustering_umap_b")
-pdf(file = file.path(DIR_FIG, paste0(fname, ".pdf")), width = 6, height = 5);p2;dev.off()
+pdf(useDingbats = F, file = file.path(DIR_FIG, paste0(fname, ".pdf")), width = 6, height = 5);p2;dev.off()
 tiff(filename = file.path(DIR_FIG, paste0(fname, ".tiff")), units = "cm", width = 6*2.5, height = 5*2.5, res = 600); p2; dev.off()
 ```
   
@@ -923,7 +938,7 @@ p3 <- ggplot(d_plot, aes(x = as.factor(seurat_clusters), y = n, fill = subject))
 p <- plot_grid(p1, p2, p3, nrow = 1, rel_heights = c(0.55, 0.45));p
 
 fname <- paste0(ANALYSIS_ID, ".clustering_countspots")
-pdf(file = file.path(DIR_FIG, paste0(fname, ".pdf")), width = 14, height = 6);p;dev.off()
+pdf(useDingbats = F, file = file.path(DIR_FIG, paste0(fname, ".pdf")), width = 14, height = 6);p;dev.off()
 tiff(filename = file.path(DIR_FIG, paste0(fname, ".tiff")), units = "cm", width = 14*2.5, height = 6*2.5, res = 600); p; dev.off()
 ```
 
@@ -941,7 +956,7 @@ p <- ggplot(d_plot, aes(x=as.numeric(bmi), y=cluster_pct_subject)) +
   theme(legend.position = "none", strip.background = element_blank(), strip.text = element_text(face = "bold")); p
 
 fname <- paste0(ANALYSIS_ID, ".clustering_countspots_corr-bmi")
-pdf(file = file.path(DIR_FIG, paste0(fname, ".pdf")), width = 6, height = 2.5);p;dev.off()
+pdf(useDingbats = F, file = file.path(DIR_FIG, paste0(fname, ".pdf")), width = 6, height = 2.5);p;dev.off()
 tiff(filename = file.path(DIR_FIG, paste0(fname, ".tiff")), units = "cm", width = 6*2.5, height = 2.5*2.5, res = 600); p; dev.off()
 ```
   
@@ -981,7 +996,7 @@ p2 <- ggplot(subset(d_plot, cluster_group %in% c("Immune")), aes(x=as.numeric(m_
 p <- (p1.1 + p1.2) / p2; p
 
 fname <- paste0(ANALYSIS_ID, ".clustering_countspots_corr-mval")
-pdf(file = file.path(DIR_FIG, paste0(fname, ".pdf")), width = 14, height = 7);p;dev.off()
+pdf(useDingbats = F, file = file.path(DIR_FIG, paste0(fname, ".pdf")), width = 14, height = 7);p;dev.off()
 tiff(filename = file.path(DIR_FIG, paste0(fname, ".tiff")), units = "cm", width = 14*2.3, height = 7*2.2, res = 600); p; dev.off()
 ```
 
@@ -1010,7 +1025,7 @@ p1 <- DotPlot(se, features = rev(unique(top_dotp$gene)),
         axis.title.y = element_blank()); p1
 
 fname <- paste0(ANALYSIS_ID, ".markers_clusterdea_dotplot_a")
-pdf(file = file.path(DIR_FIG, paste0(fname, ".pdf")), width = 7, height = 12); p1;dev.off()
+pdf(useDingbats = F, file = file.path(DIR_FIG, paste0(fname, ".pdf")), width = 7, height = 12); p1;dev.off()
 tiff(filename = file.path(DIR_FIG, paste0(fname, ".tiff")), units = "cm", width = 7*2.5, height = 12*2.5, res = 600); p1; dev.off()
 ggsave(filename = file.path(DIR_FIG, paste0(fname, ".eps")), plot = p1, width = 7, height = 12)
 ```
@@ -1027,7 +1042,7 @@ p2 <- DotPlot(se, features = rev(unique(top_dotp$gene)),
     axis.title.y = element_blank()); p2
 
 fname <- paste0(ANALYSIS_ID, ".markers_clusterdea_dotplot_b")
-pdf(file = file.path(DIR_FIG, paste0(fname, ".pdf")), width = 14, height = 5.4); p2;dev.off()
+pdf(useDingbats = F, file = file.path(DIR_FIG, paste0(fname, ".pdf")), width = 14, height = 5.4); p2;dev.off()
 tiff(filename = file.path(DIR_FIG, paste0(fname, ".tiff")), units = "cm", width = 14*2.5, height = 5.4*2.5, res = 600); p2; dev.off()
 ggsave(filename = file.path(DIR_FIG, paste0(fname, ".eps")), plot = p2, width = 14, height = 5.4)
 ```
@@ -1043,7 +1058,7 @@ p <- DoHeatmap(se,
   scale_fill_gradientn(colours = rev(RColorBrewer::brewer.pal(5, "RdBu")));
 
 fname <- paste0(ANALYSIS_ID, ".markers_clusterdea_heatmap")
-pdf(file = file.path(DIR_FIG, paste0(fname, ".pdf")), width = 22, height = 16);p;dev.off()
+pdf(useDingbats = F, file = file.path(DIR_FIG, paste0(fname, ".pdf")), width = 22, height = 16);p;dev.off()
 tiff(filename = file.path(DIR_FIG, paste0(fname, ".tiff")), units = "cm", width = 22*2.5, height = 16*2.5, res = 600); p; dev.off()
 ```
 
@@ -1102,7 +1117,7 @@ p1 <- ggplot(pw_df2, aes(x=cluster_anno, y=Pathway, size=GeneRatio, color=-log10
       panel.grid.major = element_line(colour = "grey95")); p1
 
 fname <- paste0(ANALYSIS_ID, ".baseline.markers_pea_GO_a")
-pdf(file = file.path(DIR_FIG, paste0(fname, ".pdf")), width = 8, height = 7);p1;dev.off()
+pdf(useDingbats = F, file = file.path(DIR_FIG, paste0(fname, ".pdf")), width = 8, height = 7);p1;dev.off()
 tiff(filename = file.path(DIR_FIG, paste0(fname, ".tiff")), units = "cm", width = 8*2.5, height = 7*2.5, res = 600); p1; dev.off()
 ggsave(filename = file.path(DIR_FIG, paste0(fname, ".eps")), plot = p1, width = 8, height = 7)
 
@@ -1122,7 +1137,7 @@ p2 <- ggplot(pw_df2, aes(y=cluster_anno, x=Pathway, size=GeneRatio, color=-log10
       panel.grid.major = element_line(colour = "grey95")); p2
 
 fname <- paste0(ANALYSIS_ID, ".baseline.markers_pea_GO_b")
-pdf(file = file.path(DIR_FIG, paste0(fname, ".pdf")), width = 10, height = 6);p2;dev.off()
+pdf(useDingbats = F, file = file.path(DIR_FIG, paste0(fname, ".pdf")), width = 10, height = 6);p2;dev.off()
 tiff(filename = file.path(DIR_FIG, paste0(fname, ".tiff")), units = "cm", width = 10*2.5, height = 6*2.5, res = 600); p2; dev.off()
 ggsave(filename = file.path(DIR_FIG, paste0(fname, ".eps")), plot = p2, width = 10, height = 6)
 ```
@@ -1178,7 +1193,7 @@ p1 <- ggplot(pw_df_ra2, aes(x=cluster_anno, y=Pathway, size=GeneRatio, color=-lo
       panel.grid.major = element_line(colour = "grey95")); p1
 
 fname <- paste0(ANALYSIS_ID, ".baseline.markers_pea_RA_a")
-pdf(file = file.path(DIR_FIG, paste0(fname, ".pdf")), width = 8, height = 7);p1;dev.off()
+pdf(useDingbats = F, file = file.path(DIR_FIG, paste0(fname, ".pdf")), width = 8, height = 7);p1;dev.off()
 tiff(filename = file.path(DIR_FIG, paste0(fname, ".tiff")), units = "cm", width = 8*2.5, height = 7*2.5, res = 600); p1; dev.off()
 ggsave(filename = file.path(DIR_FIG, paste0(fname, ".eps")), plot = p1, width = 8, height = 7)
 ```
@@ -1197,7 +1212,7 @@ p2 <- ggplot(pw_df_ra2, aes(y=cluster_anno, x=Pathway, size=GeneRatio, color=-lo
       panel.grid.major = element_line(colour = "grey95")); p2
 
 fname <- paste0(ANALYSIS_ID, ".baseline.markers_pea_RA_b")
-pdf(file = file.path(DIR_FIG, paste0(fname, ".pdf")), width = 10, height = 6);p2;dev.off()
+pdf(useDingbats = F, file = file.path(DIR_FIG, paste0(fname, ".pdf")), width = 10, height = 6);p2;dev.off()
 tiff(filename = file.path(DIR_FIG, paste0(fname, ".tiff")), units = "cm", width = 10*2.5, height = 6*2.5, res = 600); p2; dev.off()
 ggsave(filename = file.path(DIR_FIG, paste0(fname, ".eps")), plot = p2, width = 10, height = 6)
 ```
@@ -1236,7 +1251,7 @@ p2 <- ggplot(d_plot, aes(x=factor(bmi), y=ADIPOQ, fill = gender)) +
 p <- p1-p2;p
 
 fname <- paste0(ANALYSIS_ID, ".other_geneexpr_LEP_ADIPOQ")
-pdf(file = file.path(DIR_FIG, paste0(fname, ".pdf")), width = 8, height = 3.5);p;dev.off()
+pdf(useDingbats = F, file = file.path(DIR_FIG, paste0(fname, ".pdf")), width = 8, height = 3.5);p;dev.off()
 tiff(file = file.path(DIR_FIG, paste0(fname, ".tiff")), units = "cm", width = 8*2.5, height = 3.5*2.5, res=600);p;dev.off()
 ```
   
@@ -1275,7 +1290,7 @@ p2 <- ggplot(d_plot, aes(x=factor(bmi), y=ADIPOQ, fill = gender)) +
 p <- p1-p2;p
 
 fname <- paste0(ANALYSIS_ID, ".other_geneexpr_LEP_ADIPOQ_adipocytes")
-pdf(file = file.path(DIR_FIG, paste0(fname, ".pdf")), width = 12, height = 3.5);p;dev.off()
+pdf(useDingbats = F, file = file.path(DIR_FIG, paste0(fname, ".pdf")), width = 12, height = 3.5);p;dev.off()
 tiff(file = file.path(DIR_FIG, paste0(fname, ".tiff")), units = "cm", width = 12*2.5, height = 3.5*2.5, res=600);p;dev.off()
 ```
     
@@ -1303,7 +1318,7 @@ p <- ggplot(subset(df_ins_prop, insulin_cat == "high"), aes(x = subject_alias, y
 
 
 fname <- paste0(ANALYSIS_ID, ".other_insulinsign_bar")
-pdf(file = file.path(DIR_FIG, paste0(fname, ".pdf")), width = 6, height = 4);p;dev.off()
+pdf(useDingbats = F, file = file.path(DIR_FIG, paste0(fname, ".pdf")), width = 6, height = 4);p;dev.off()
 tiff(filename = file.path(DIR_FIG, paste0(fname, ".tiff")), units = "cm", width = 6*2.5, height = 4*2.5, res = 600); p; dev.off()
 ```
 
@@ -1330,5 +1345,6 @@ This analysis was last compiled on `r Sys.Date()`.
   
 ```{r sessioninfo}
 sessionInfo()
+se@commands
 ```
 

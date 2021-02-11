@@ -821,5 +821,6 @@ This analysis was last compiled on `r Sys.Date()`.
   
 ```{r sessioninfo}
 sessionInfo()
+se@commands
 ```
 
