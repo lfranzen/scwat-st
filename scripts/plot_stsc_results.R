@@ -13,7 +13,12 @@
 #' Select analysis:
 ANALYSIS <- "baseline"
 # ANALYSIS <- "insulin"
-ANALYSIS_ID <- paste0("stsc_", ANALYSIS)
+
+# STSC_RUN <- "stereoscope_200925"
+STSC_RUN <- "stereoscope_210322"
+# STSC_RUN <- "stereoscope_210407"
+
+ANALYSIS_ID <- paste0("stsc", strsplit(STSC_RUN, "_")[[1]][2], "_", ANALYSIS)
 
 #' Load libs
 library(Seurat)
@@ -30,7 +35,7 @@ library(scico)
 #' Define paths
 DIR_ROOT <- getwd()
 DIR_WD <- file.path(getwd(), "scripts")
-DIR_DATA <- file.path(DIR_ROOT, "data", "stereoscope_200925")
+DIR_DATA <- file.path(DIR_ROOT, "data", STSC_RUN)
 DIR_RES <- file.path(DIR_ROOT, "results" , "visium")
 DIR_FIG <- file.path(DIR_RES, "figures")
 
@@ -122,7 +127,7 @@ path_data_files <- paste0(DIR_DATA, "/", list.files(DIR_DATA, recursive = T))
 sample_fnames <- gsub(pattern = ".tsv", replacement = "", grep(pattern = "ADI_", x = unlist(strsplit(x = path_data_files, split = "/")), value = T))
 sample_names <- grep(pattern = "ADI_", x = unlist(strsplit(x = sample_fnames, split = "-")), value = T)
 
-stsc_data_raw <- read_st_datasets(data_path = DIR_DATA, file_pattern = "W.2020")
+stsc_data_raw <- read_st_datasets(data_path = DIR_DATA, file_pattern = "W.20")
 names(stsc_data_raw) <- sample_names
 
 
@@ -132,13 +137,13 @@ if (ANALYSIS=="baseline") {
   message("Read seurat object from analysis ", ANALYSIS)
   c_anno <- read.csv(file.path(DIR_RES, "tables", "visium_baseline.clustering_annotations.csv"), stringsAsFactors = F)
   se <- readRDS(file.path(DIR_RES, "se-object.visium_baseline.rds"))
-  se <- LoadImages(se, time.resolve = T, verbose = T, xdim = 100)
+  # se <- LoadImages(se, time.resolve = T, verbose = T, xdim = 100)
 } else if (ANALYSIS=="insulin") {
   #' 'Insulin' Visium data
   message("Read seurat object from analysis ", ANALYSIS)
   c_anno <- read.csv(file.path(DIR_RES, "tables", "visium_insulin.clustering_annotations.csv"), stringsAsFactors = F)
   se <- readRDS(file.path(DIR_RES, "se-object.visium_insulin.rds"))
-  se <- LoadImages(se, time.resolve = T, verbose = T, xdim = 100)
+  # se <- LoadImages(se, time.resolve = T, verbose = T, xdim = 100)
   se <- AddMetaData(se, metadata = paste0(se$subject_id, "_", se$insulin_stim), col.name = "subject_id")
 }
 
@@ -167,22 +172,35 @@ se_subset <- AddMetaData(object = se_subset, metadata = stsc_data_merged_t[spots
 #' ==================================================================
 #' PLOT
 
-#' Prep
+#' Prep plot data
 fname <- paste0(ANALYSIS_ID, ".overlap_seu_clusters")
 
 stsc_cell_feats <- colnames(stsc_data_merged_t)
 stsc_cell_feats2 <- gsub("cell.", "", stsc_cell_feats)
 
-d_plot <- se_subset@meta.data[, c("seurat_clusters", "cluster_anno", "cluster_group", stsc_cell_feats)]
+d_plot <- se_subset@meta.data[, c("seurat_clusters", "cluster_anno", "cluster_group", "sample_name", stsc_cell_feats)]
 colnames(d_plot) <- gsub("cell.", "", colnames(d_plot))
 d_plot_l <- reshape2::melt(d_plot, measure.vars=stsc_cell_feats2, variable.name="cell")
 
 d_plot_l$order_group <- as.numeric(as.factor(d_plot_l$cluster_group))
 
 
+#' Summarised stats by cluster
+d_plot_stats <- d_plot_l %>%
+  dplyr::group_by(seurat_clusters, cell) %>%
+  dplyr::summarise(value_median = median(value, na.rm = TRUE),
+                   value_mean = mean(value, na.rm = TRUE))
+
+
+#' Export plot data/tables
+write.table(d_plot, file.path(DIR_RES, "tables", paste0(ANALYSIS_ID, ".plot_data_wide.tsv")), quote = F, sep = "\t", row.names = T, col.names = T)
+write.table(d_plot_l, file.path(DIR_RES, "tables", paste0(ANALYSIS_ID, ".plot_data_long.tsv")), quote = F, sep = "\t", row.names = F, col.names = T)
+write.table(d_plot_stats, file.path(DIR_RES, "tables", paste0(ANALYSIS_ID, ".plot_data_medians.tsv")), quote = F, sep = "\t", row.names = F, col.names = T)
+
+
 #' VlnPlot + Box (Seurat)
 feat_plot <- grep("immune", stsc_cell_feats, value = T)
-pdf(file = file.path(DIR_FIG, paste0(fname, "_violinbox.pdf")), width = 16, height = 24, useDingbats = F)
+pdf(file = file.path(DIR_FIG, paste0(fname, "_violinbox.pdf")), width = 16, height = 28, useDingbats = F)
 VlnPlot(object = se_subset,
         features = sort(stsc_cell_feats),
         group.by = "cluster_anno",
@@ -200,7 +218,7 @@ dev.off()
 plots <- list()
 for(c in sort(stsc_cell_feats2)) {
   plots[[c]] <- ggplot(subset(d_plot_l, cell==c), aes(x=reorder(cluster_anno, order_group), y=value, fill=cluster_anno)) +
-    geom_boxplot(width=.8, outlier.size = .5) +
+    geom_boxplot(width=.8, outlier.size = .2, outlier.colour = "grey80", color = "black", lwd=0.3) +
     labs(x="", y=c) +
     facet_grid(~cell) + 
     scale_fill_manual(values = c_anno$cluster_color) +
@@ -211,9 +229,7 @@ for(c in sort(stsc_cell_feats2)) {
           panel.grid = element_blank()) +
     NoLegend()
 }
-# patchwork::wrap_plots(plots[1], ncol=1)
-
-pdf(file = file.path(DIR_FIG, paste0(fname, "_box.pdf")), width = 14, height = 22, useDingbats = F)
+pdf(file = file.path(DIR_FIG, paste0(fname, "_box.pdf")), width = 14, height = 26, useDingbats = F)
 patchwork::wrap_plots(plots, ncol=3)
 dev.off()
 
@@ -222,7 +238,7 @@ dev.off()
 plots <- list()
 for(c in sort(stsc_cell_feats2)) {
   plots[[c]] <- ggplot(subset(d_plot_l, cell==c), aes(x=reorder(seurat_clusters, order_group), y=value, fill=cluster_anno)) +
-    geom_boxplot(width=.8, outlier.size = .5) +
+    geom_boxplot(width=.8, outlier.size = .2, outlier.colour = "grey80", color = "black", lwd=0.3) +
     labs(x="", y=c) +
     facet_grid(~cell) + 
     scale_fill_manual(values = c_anno$cluster_color) +
@@ -234,11 +250,175 @@ for(c in sort(stsc_cell_feats2)) {
       panel.grid = element_blank()) +
     NoLegend()
 }
-# patchwork::wrap_plots(plots[1], ncol=1)
-
-pdf(file = file.path(DIR_FIG, paste0(fname, "_box2.pdf")), width = 14, height = 16, useDingbats = F)
+pdf(file = file.path(DIR_FIG, paste0(fname, "_box2.pdf")), width = 14, height = 20, useDingbats = F)
 patchwork::wrap_plots(plots, ncol=3)
 dev.off()
 
 
+#' no outliers
+plots <- list()
+for(c in sort(stsc_cell_feats2)) {
+  plots[[c]] <- ggplot(subset(d_plot_l, cell==c), aes(x=reorder(seurat_clusters, order_group), y=value, fill=cluster_anno)) +
+    geom_boxplot(width=.8, outlier.shape = NA, color = "black", lwd=0.3) +
+    labs(x="", y=c) +
+    facet_grid(~cell) + 
+    scale_fill_manual(values = c_anno$cluster_color) +
+    coord_cartesian(ylim = c(0, .25)) +
+    theme_linedraw() +
+    theme(
+      strip.background = element_blank(),
+      panel.grid = element_blank()) +
+    NoLegend()
+}
+pdf(file = file.path(DIR_FIG, paste0(fname, "_box2-nooutliers.pdf")), width = 14, height = 20, useDingbats = F)
+patchwork::wrap_plots(plots, ncol=3)
+dev.off()
+
+
+#' Boxplot 3 (ggplot2): selected samples
+feat_plot <- c("E1", "E2", "IS4", "IS5", "IS9", "IS10", "P4", "P6")
+txt_size <- 8
+plots <- list()
+for(c in feat_plot) {
+  plots[[c]] <- ggplot(subset(d_plot_l, cell==c), aes(x=reorder(seurat_clusters, order_group), y=value, fill=cluster_anno)) +
+    geom_boxplot(width=.8, outlier.size = .2, outlier.colour = "grey80", color = "black", lwd=0.3) +
+    labs(x="", y="") +
+    facet_grid(~cell) + 
+    coord_flip() +
+    scale_fill_manual(values = c_anno$cluster_color) +
+    theme_linedraw() +
+    theme(
+      axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1, size = txt_size),
+      axis.text.y = element_text(size = txt_size),
+      strip.background = element_rect(fill = "white", colour = "white"),
+      strip.text = element_text(colour = "black", size = txt_size),
+      # strip.background = element_blank(),
+      panel.grid = element_blank()) +
+    NoLegend()
+}
+pdf(file = file.path(DIR_FIG, paste0(fname, "_box3b.pdf")), width = 4, height = 12, useDingbats = F)
+patchwork::wrap_plots(plots, ncol=2)
+dev.off()
+
+
+#' Bar plot of medians
+txt_size <- 6
+p <- ggplot(d_plot_stats, aes(x=seurat_clusters, y=value_median, fill=seurat_clusters)) +
+  geom_col() +
+  facet_wrap(~cell, scales = "free_y", ncol = 3) +
+  labs(x="", y="Spot proportion median value") +
+  scale_fill_manual(values = c_anno[order(c_anno$seurat_clusters), "cluster_color"]) +
+  theme_linedraw() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1, size = txt_size),
+    axis.text.y = element_text(size = txt_size),
+    strip.background = element_rect(fill = "white", colour = "white"),
+    strip.text = element_text(colour = "black", size = txt_size),
+    panel.grid = element_blank()) + NoLegend(); p
+pdf(file = file.path(DIR_FIG, paste0(fname, "_bars-median.pdf")), width = 8, height = 12, useDingbats = F);p;dev.off()
+
+#' selected clusters
+c_rm <- c(1,2,3,4,6)
+col_fill_d <- c_anno[!c_anno$seurat_clusters %in% c_rm, ] %>% dplyr::arrange(seurat_clusters)
+p2 <- ggplot(d_plot_stats[!d_plot_stats$seurat_clusters %in% c_rm, ], aes(x=seurat_clusters, y=value_median, fill=seurat_clusters)) +
+  geom_col() +
+  geom_hline(yintercept = 0, color="black", lwd=.3) +
+  facet_wrap(~cell, scales = "free", ncol = 5) +
+  labs(x="", y="Spot proportion median value") +
+  scale_fill_manual(values = col_fill_d$cluster_color) +
+  coord_flip() +
+  theme_linedraw() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1, size = txt_size),
+    axis.text.y = element_text(size = txt_size),
+    strip.background = element_rect(fill = "white", colour = "white"),
+    strip.text = element_text(colour = "black", size = txt_size),
+    panel.grid = element_blank()) + NoLegend(); p2
+pdf(file = file.path(DIR_FIG, paste0(fname, "_bars-median_subset.pdf")), width = 8, height = 12, useDingbats = F);p2;dev.off()
+
+
+#' Correlation plot
+M <- cor(d_plot[, stsc_cell_feats2])
+pdf(file = file.path(DIR_FIG, paste0(fname, "_corrmatrix.pdf")), width = 8, height = 7, useDingbats = F)
+corrplot(M, method="pie", 
+         type="upper",
+         # order="hclust", 
+         col=brewer.pal(n=8, name="RdYlBu"), 
+         tl.col="black")
+dev.off()
+
+
+#' UMAPs
+feat_plot <- paste0("cell.", c("E1", "E2", "IS4", "IS5", "IS9", "IS10", "P4", "P6"))
+
+p <- FeaturePlot(se_subset, reduction = "umap", features = feat_plot, 
+                ncol=2,
+                # min.cutoff = 0, max.cutoff = .2,
+                cols = c("grey95", color_high2) 
+                ) & theme(axis.title = element_blank(), 
+                          axis.line = element_blank(), 
+                          axis.text = element_blank(),
+                          axis.ticks = element_blank())
+
+pdf(file = file.path(DIR_FIG, paste0(fname, "_umap.pdf")), width = 10, height = 18, useDingbats = F);p;dev.off()
+
+
+feat_plot2 <- paste0("cell.", c("E2", "IS9", "P4"))
+p2 <- FeaturePlot(se_subset, reduction = "umap", features = feat_plot2, 
+                 ncol=1,
+                 min.cutoff = 0, max.cutoff = .4,
+                 cols = c("grey95", color_high2) 
+                 ) & theme(axis.title = element_blank(), 
+                            axis.line = element_blank(), 
+                            axis.text = element_blank(),
+                            axis.ticks = element_blank());p2
+pdf(file = file.path(DIR_FIG, paste0(fname, "_umap2.pdf")), width = 5, height = 12, useDingbats = F);p2;dev.off()
+
+
+#' Spatial plots
+# feat_plot <- paste0("cell.", c("E1", "E2", "IS4", "IS4", "IS9", "P6"))
+# ST.FeaturePlot(object = se_subset,
+#                features = feat_plot, 
+#                indices = 4)
+
+
+
+
+
 #' ==================================================================
+
+#' Correlation of marker genes with LEP expression.
+#' Remove this afterwards:
+# markers_C3 <- FindMarkers(se, ident.1 = "3", only.pos = T, logfc.threshold = 0.15)
+# markers_C4 <- FindMarkers(se, ident.1 = "4", only.pos = T, logfc.threshold = 0.15)
+# genes_corr <- c(rownames(markers_C3), rownames(markers_C4))
+# 
+# exp_mat <- as.matrix(se@assays$SCT@data[genes_corr, ])
+# exp_goi <- as.numeric(exp_mat["LEP",])
+# 
+# gene_corr <- apply(exp_mat, 1, function(x){cor(exp_goi, x)})
+# 
+# gene_df_out <- data.frame(gene = genes_corr,
+#                           corr = gene_corr,
+#                           cluster = c(rep("C3", length(rownames(markers_C3))), rep("C4", length(rownames(markers_C4))) )
+#                           )
+# gene_df_out <- gene_df_out[!rownames(gene_df_out) %in% "LEP", ]
+# 
+# p1 <- ggplot(gene_df_out, aes(x=cluster, y=corr)) +
+#   geom_boxplot() +
+#   theme_linedraw()
+# 
+# p2 <- ggplot(gene_df_out, aes(x=reorder(gene, corr), y=corr, fill=cluster)) +
+#   geom_col() +
+#   labs(x="") +
+#   coord_flip() +
+#   theme_linedraw()
+# 
+# p <- (p1+p2) + plot_annotation(title="Gene correlations with LEP");p
+# pdf(file = file.path(DIR_FIG, "LEP_gene_corr_C3-C4.pdf"), width = 10, height = 8, useDingbats = F);p;dev.off()
+# 
+# write.csv(gene_df_out, file.path(DIR_FIG, "LEP_gene_corr_C3-C4.csv"), row.names = F)
+
+#' ==================================================================
+
+
