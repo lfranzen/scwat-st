@@ -553,6 +553,28 @@ write_xlsx(
   format_headers = TRUE
 )
 ```
+<br><br>
+
+
+## Cluster DEA of adipocyte subset  
+  
+Find marker of adipocyte clusters after subsetting data and thus only compare each adipocyte cluster against the other adipocytes.  
+  
+```{r markers_clusterdea_adipocyte}
+spots_keep_adi <- colnames(subset(se, seurat_clusters %in% c(3,4,6)))
+se_vis_adi <- SubsetSTData(se, spots = spots_keep_adi)
+markers_visium_adi <- FindAllMarkers(se_vis_adi, logfc.threshold = 0.15)
+
+fname <- paste0(ANALYSIS_ID, "_adipocyte.markers_clusterdea.xlsx")
+sheets <- list()
+sheets["adipocyte_markers"] <- list(as.data.frame(markers_visium_adi))
+write_xlsx(
+  x = sheets,
+  path = file.path(DIR_RES, fname),
+  col_names = TRUE,
+  format_headers = TRUE
+)
+```
 
 <br><br>
   
