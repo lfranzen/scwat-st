@@ -1,7 +1,8 @@
 ########################
-#' Betweeen-cluster analysis
+#' Betweeen-cluster analysis: "Heterotypic score algorithm"
 #' 
-#' Identify cluster-cluster neighbours. Visualize adjacency matrices as graphs and heatmaps. 
+#' Identify and quantify cluster-cluster neighbours. 
+#' Visualize adjacency matrices as graphs and heatmaps. 
 #' 
 #' L. Franzén, lovisa.franzen@scilifelab.se
 #' Jan 2020

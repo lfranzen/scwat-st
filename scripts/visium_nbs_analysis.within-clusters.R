@@ -1,7 +1,7 @@
 ########################
-#' Within-cluster analysis
+#' Within-cluster analysis: "Homotypic score algorithm"
 #' 
-#' Visium neighbourhood analysis of cluster community formation or aggregation ("self-clustering") 
+#' Visium neighbourhood analysis of cluster community formation or aggregation  
 #' by computing the average degree for each cluster and sample
 #' 
 #' L. Franzén, lovisa.franzen@scilifelab.se
@@ -143,7 +143,7 @@ RandomClusteringSpatNet <- function (
 
 
 # ===================================
-#' RUN NBS ANALYSIS
+#' RUN NBS ANALYSIS: "OBSERVED"
 #' Create "spatial" network for each sample
 spatnet_init <- GetSpatNet(se)
 
@@ -302,6 +302,8 @@ write.csv(k_avg_perm_zscore, file = file.path(DIR_OUT, paste0("nbs_cluster_kavg-
 # k_avg_perm_diff <- read.csv(file = file.path(DIR_OUT, paste0("nbs_cluster_kavg-perm_diff_score.", ANALYSIS, ".csv")), row.names = 1)
 # k_avg_perm_zscore <- read.csv(file = file.path(DIR_OUT, paste0("nbs_cluster_kavg-perm_zscore.", ANALYSIS, ".csv")), row.names = 1)
 
+
+
 # ===================================
 #' PLOT SUMMARY STATS
 #' 
@@ -374,7 +376,7 @@ pdf(file.path(DIR_OUT, "../figures", paste0("nbs_cluster_kavg-perm_zscore_stats.
 
 
 
-#' kavg zscore box plot
+#' Plot kavg zscore box plot
 df_kavg_zscore <- as.data.frame(t(k_avg_perm_zscore))
 df_kavg_zscore$cluster <- paste0("C", as.character(sub(pattern = "kavg_cluster_", "", rownames(df_kavg_zscore))))
 df_kavg_zscore_long <- reshape2::melt(df_kavg_zscore, id.vars = c("cluster"))
