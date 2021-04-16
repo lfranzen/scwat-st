@@ -13,9 +13,12 @@ In this project, we performed spatial transcriptomics, using the 10x Genomic's V
 Publication: TBD
 
 
+*TO DO: Add figure from manuscript*
+
+
 ## Content  
 
-* ´data`
+* `data`
   * `visium`  
     * Download data from Mendeley Data DOI (*TO DO: ADD DOI*)  and place in this folder  
   * `gene_annotation`: two tables with gene annotation information used for gene filtering and ID conversions  
