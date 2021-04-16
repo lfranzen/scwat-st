@@ -15,13 +15,13 @@ Publication: TBD
 
 ## Content  
 
-* ´data´
-  * 'visium´  
-    * Download data from Mendeley Data DOI XXX and place in this folder  
-  * ´gene_annotation´: two tables with gene annotation information used for gene filtering and ID conversions  
-  * ´CAGE´: Data containing FANTOM5 CAGE bulk data used for comparison (*TO DO: ADD REF*)  
-* ´scripts´: All main R scripts used for processing and analysing the Visium data  
-* ´doc´: Contains pdf with data analysis overview flowchart  
+* ´data`
+  * `visium`  
+    * Download data from Mendeley Data DOI (*TO DO: ADD DOI*)  and place in this folder  
+  * `gene_annotation`: two tables with gene annotation information used for gene filtering and ID conversions  
+  * `CAGE`: Data containing FANTOM5 CAGE bulk data used for comparison (*TO DO: ADD REF*)  
+* `scripts`: All main R scripts used for processing and analysing the Visium data  
+* `doc`: Contains pdf with data analysis overview flowchart  
 
 
 ## Contact  
