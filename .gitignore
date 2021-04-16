@@ -1,6 +1,8 @@
 /.Rproj.user
-/data/visium/
+/data/visium/S*
 /data/ST_2k/
+/results/ST_2k/
+/data/stereoscope*
 *.rds
 *.tiff
 /scripts/*.html
