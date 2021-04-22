@@ -493,13 +493,67 @@ write.csv(cluster_prop, file = file.path(DIR_RES, "tables", paste0(ANALYSIS_ID, 
 datatable(cluster_prop, rownames = F, caption = paste("Cluster spot count and proportions"))
 ```
 
-<br><br>
 
+## Adipocyte re-clustering
+
+Re-clustering of only the adipocyte clusters in order get more refined clusters and marker gene lists.
+
+```{r reclus_adipocytes_split}
+spots_select <- rownames(subset(se[[]], cluster_group %in% "Adipocyte"))
+se_adi <- SubsetSTData(se, spots = spots_select)
+
+dim(se_adi)
+unique(se_adi$cluster_anno)
+```
+
+ 
+```{r reclus_adipocytes_dimred}
+# ICA
+se_adi <- RunICA(object = se_adi, verbose = T)
+
+# Harmony
+var_int <- c("date_exp", "subject_id")
+se_adi <- RunHarmony(object = se_adi, group.by.vars = var_int, assay.use="SCT", reduction = "ica", plot_convergence = TRUE)
+```
+
+
+```{r reclus_adipocytes_clustering}
+red_use <- "harmony"
+dims_use_adi <- 1:13
+se_adi <- FindNeighbors(object = se_adi, verbose = T, reduction = red_use, dims = dims_use_adi)
+
+for (res in 0.5) {
+  print(res)
+  se_adi <- FindClusters(object = se_adi, verbose = T, algorithm = 1, resolution = res)
+}
+```
+
+```{r reclus_adipocytes_clustering2, fig.width=8, fig.height=6}
+res_use <- "SCT_snn_res.0.5"
+se_adi[["seurat_clusters"]] <- se_adi[[res_use]]
+se_adi[["seurat_clusters"]] <- as.factor(as.numeric(as.character(se_adi[[]]$seurat_clusters))+1)
+se_adi <- SetIdent(se_adi, value = "seurat_clusters")
+
+n <- length( unique(as.character(se_adi@meta.data$seurat_clusters)) )
+print(paste("Number of clusters:", n))
+
+print("Cluster sizes (n spots per cluster):")
+cluster_count_adi <- se_adi[["seurat_clusters"]] %>%
+  group_by(seurat_clusters) %>%
+  dplyr::count() %>%
+  dplyr::arrange(desc(n))
+cluster_count_adi$pct <- round(cluster_count_adi$n / sum(cluster_count_adi$n), digits = 3) * 100
+cluster_count_adi
+```
+
+<br><br>
 
 # Cluster marker genes
 
 ## Cluster DEA  
   
+### LogFC cut-off 0.15  
+
 ```{r markers_clusterdea}
 logf_thr <- 0.15
 cluster_calc_de <- unique(sort(as.numeric(as.character(subset(cluster_prop, n>3)$seurat_clusters))))
@@ -556,6 +610,44 @@ write_xlsx(
 <br><br>
 
 
+### ALL genes (no cut-off)  
+
+```{r markers_clusterdea_all}
+logf_thr <- 0
+cluster_calc_de <- unique(sort(as.numeric(as.character(subset(cluster_prop, n>3)$seurat_clusters))))
+markers_seu_clusters_all <- list()
+for( i in cluster_calc_de ) {
+  print(paste("Finding markers for cluster", i))
+  c <- paste0("cluster_", i)
+  
+  markers_seu_clusters_all[[c]] <- FindMarkers(se, ident.1 = as.character(i), logfc.threshold = logf_thr)
+}
+```
+
+```{r markers_clusterdea_all_export}
+fname <- paste0(ANALYSIS_ID, ".markers_clusterdea_ALL.xlsx")
+
+sheets <- list()
+for (i in 1:length(markers_seu_clusters_all)){
+  c_name <- names(markers_seu_clusters_all[i])
+  c_data <- markers_seu_clusters_all[[i]]
+  c_names <- colnames(c_data)
+  c_data$gene <- rownames(c_data)
+  c_data <- c_data[, c("gene", c_names)]
+
+  sheets[c_name] <- list(c_data)
+}
+
+write_xlsx(
+  x = sheets,
+  path = file.path(DIR_RES, "tables", fname),
+  col_names = TRUE,
+  format_headers = TRUE
+)
+```
+
+<br><br
+
 ## Cluster DEA of adipocyte subset  
   
 Find marker of adipocyte clusters after subsetting data and thus only compare each adipocyte cluster against the other adipocytes.  
@@ -570,13 +662,68 @@ sheets <- list()
 sheets["adipocyte_markers"] <- list(as.data.frame(markers_visium_adi))
 write_xlsx(
   x = sheets,
-  path = file.path(DIR_RES, fname),
+  path = file.path(DIR_RES, "tables", fname),
   col_names = TRUE,
   format_headers = TRUE
 )
 ```
 
 <br><br>
+  
+## Cluster DEA of adipocyte re-clustering
+  
+```{r reclus_adipocytes_dea}
+logf_thr <- 0
+
+cluster_calc_de_adi <- sort(as.numeric(as.character(subset(cluster_count_adi, n>3)$seurat_clusters)))
+markers_seu_clusters_adi <- list()
+for( i in cluster_calc_de_adi ) {
+  print(paste("Finding markers for cluster", i))
+  c <- paste0("cluster_", i)
+  
+  markers_seu_clusters_adi[[c]] <- FindMarkers(se_adi, ident.1 = as.character(i), logfc.threshold = logf_thr)
+}
+```
+
+```{r reclus_adipocytes_dea2}
+top_n_genes <- 10
+logf_thr <- 0.15
+
+se_markers_adi <- FindAllMarkers(se_adi, only.pos = TRUE, min.pct = 0.1, logfc.threshold = logf_thr)
+
+se_markers_adi$pct.diff <- se_markers_adi$pct.1 - se_markers_adi$pct.2
+se_markers_adi_top <- se_markers_adi %>% 
+  group_by(cluster) %>% 
+  dplyr::top_n(n = top_n_genes, wt = avg_logFC)
+
+se_markers_adi_top <- se_markers_adi_top[, c("gene", "cluster", "avg_logFC", "pct.1", "pct.2", "pct.diff", "p_val", "p_val_adj")]
+datatable(se_markers_adi_top, rownames = F, caption = paste("Top", top_n_genes, "marker genes for the computed Seurat clusters"))
+```
+  
+```{r reclus_adipocytes_dea_export}
+fname <- paste0(ANALYSIS_ID, "_adipocytes-reclust.markers_clusterdea.xlsx")
+
+sheets <- list()
+sheets["top_markers_all_clusters"] <- list(as.data.frame(se_markers_adi_top))
+for (i in 1:length(markers_seu_clusters_adi)){
+  c_name <- names(markers_seu_clusters_adi[i])
+  c_data <- markers_seu_clusters_adi[[i]]
+  c_names <- colnames(c_data)
+  c_data$gene <- rownames(c_data)
+  c_data <- c_data[, c("gene", c_names)]
+
+  sheets[c_name] <- list(c_data)
+}
+
+write_xlsx(
+  x = sheets,
+  path = file.path(DIR_RES, "tables", fname),
+  col_names = TRUE,
+  format_headers = TRUE
+)
+```
+ 
+<br><br> 
   
 ## Pathway enrichment
 
@@ -655,7 +802,45 @@ write_xlsx(
 <br><br>
   
   
+
+<br><br>
+  
 # Other  
+
+## Correlation of marker genes with LEP expression
+
+```{r other_LEP_gene_correlations}
+markers_C3 <- FindMarkers(se, ident.1 = "3", only.pos = T, logfc.threshold = 0.15)
+markers_C4 <- FindMarkers(se, ident.1 = "4", only.pos = T, logfc.threshold = 0.15)
+genes_corr <- c(rownames(markers_C3), rownames(markers_C4))
+
+exp_mat <- as.matrix(se@assays$SCT@data[genes_corr, ])
+exp_goi <- as.numeric(exp_mat["LEP",])
+
+gene_corr <- apply(exp_mat, 1, function(x){cor(exp_goi, x)})
+
+gene_df_out <- data.frame(gene = genes_corr,
+                          corr = gene_corr,
+                          cluster = c(rep("C3", length(rownames(markers_C3))), rep("C4", length(rownames(markers_C4))) )
+                          )
+gene_df_out <- gene_df_out[!rownames(gene_df_out) %in% "LEP", ]
+
+p1 <- ggplot(gene_df_out, aes(x=cluster, y=corr)) +
+  geom_boxplot() +
+  theme_linedraw()
+
+p2 <- ggplot(gene_df_out, aes(x=reorder(gene, corr), y=corr, fill=cluster)) +
+  geom_col() +
+  labs(x="") +
+  coord_flip() +
+  theme_linedraw()
+
+p <- (p1+p2) + plot_annotation(title="Gene correlations with LEP");p
+pdf(file = file.path(DIR_FIG, "LEP_gene_corr_C3-C4.pdf"), width = 10, height = 8, useDingbats = F);p;dev.off()
+
+write.csv(gene_df_out, file.path(DIR_FIG, "LEP_gene_corr_C3-C4.csv"), row.names = F)
+```
+
 
 ## Cell signature expression  
 
@@ -1348,6 +1533,8 @@ tiff(filename = file.path(DIR_FIG, paste0(fname, ".tiff")), units = "cm", width 
 ```{r save_rds, fig.width=10, fig.height=6}
 fname <- paste0("se-object.", ANALYSIS_ID, ".rds")
 saveRDS(object = se, file = file.path(DIR_RES, fname))
+
+# se <- readRDS(file = file.path(DIR_RES, fname))
 ```
 
 <br><br>
