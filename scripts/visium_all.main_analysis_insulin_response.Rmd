@@ -1183,7 +1183,7 @@ d_plot <- cluster_prop
 
 p1 <- ggplot(d_plot, aes(x = as.factor(insulin_stim), y = n, fill = as.factor(seurat_clusters))) + 
   geom_bar(stat = 'identity', colour=NA, position = "stack") +
-  scale_fill_manual(values = c_anno[order(c_anno$seurat_clusters), "cluster_color"]) +
+  # scale_fill_manual(values = c_anno[order(c_anno$seurat_clusters), "cluster_color"]) +
   facet_wrap(~as.factor(subject), nrow = 1) +
   labs(x="", y="# Spots", fill="") +
   theme_minimal() +
