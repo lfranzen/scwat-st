@@ -5,7 +5,6 @@
 /data/stereoscope*
 *.rds
 *.tiff
-/scripts/*.html
 /scripts/*_cache
 /scripts/*_files
 .Rproj.user
