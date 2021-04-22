@@ -1,7 +1,7 @@
 /.Rproj.user
+/ignore
 /data/visium/S*
-/data/ST_2k/
-/results/ST_2k/
+/data/visium/se*
 /data/stereoscope*
 *.rds
 *.tiff
