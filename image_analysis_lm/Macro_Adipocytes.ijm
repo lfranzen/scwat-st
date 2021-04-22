@@ -1,0 +1,10 @@
+run("Set Measurements...", "area center display redirect=None decimal=0");
+run("Duplicate...", "title=copy");
+run("8-bit");
+run("Subtract Background...", "rolling=50 light");
+run("Median...", "radius=1");
+setAutoThreshold("Huang dark");
+run("Analyze Particles...", "size=2000-Infinity circularity=0.20-1.00 exclude add");
+selectWindow("copy");
+close();
+roiManager("Measure");
