@@ -27,7 +27,7 @@ Publication: *TBD*
   * `CAGE`: Data containing FANTOM5 CAGE bulk data used for comparison (Rydén et al., 2016, DOI: 10.1016/j.celrep.2016.07.070)  
 * `scripts`: All main R scripts used for processing and analysing the Visium data  
 * `image_analysis_lm`: R  code, ImageJ macro, and final data output related to the adipocyte size determination using image analysis
-* `doc`: Contains pdf with data analysis overview flowchart  
+* `doc`: Contains html output reports, pdf with data analysis overview flowchart, and other documents  
 
 
 ## Contact  
