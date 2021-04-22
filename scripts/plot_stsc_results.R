@@ -382,43 +382,7 @@ pdf(file = file.path(DIR_FIG, paste0(fname, "_umap2.pdf")), width = 5, height = 
 #                indices = 4)
 
 
-
-
-
 #' ==================================================================
 
-#' Correlation of marker genes with LEP expression.
-#' Remove this afterwards:
-# markers_C3 <- FindMarkers(se, ident.1 = "3", only.pos = T, logfc.threshold = 0.15)
-# markers_C4 <- FindMarkers(se, ident.1 = "4", only.pos = T, logfc.threshold = 0.15)
-# genes_corr <- c(rownames(markers_C3), rownames(markers_C4))
-# 
-# exp_mat <- as.matrix(se@assays$SCT@data[genes_corr, ])
-# exp_goi <- as.numeric(exp_mat["LEP",])
-# 
-# gene_corr <- apply(exp_mat, 1, function(x){cor(exp_goi, x)})
-# 
-# gene_df_out <- data.frame(gene = genes_corr,
-#                           corr = gene_corr,
-#                           cluster = c(rep("C3", length(rownames(markers_C3))), rep("C4", length(rownames(markers_C4))) )
-#                           )
-# gene_df_out <- gene_df_out[!rownames(gene_df_out) %in% "LEP", ]
-# 
-# p1 <- ggplot(gene_df_out, aes(x=cluster, y=corr)) +
-#   geom_boxplot() +
-#   theme_linedraw()
-# 
-# p2 <- ggplot(gene_df_out, aes(x=reorder(gene, corr), y=corr, fill=cluster)) +
-#   geom_col() +
-#   labs(x="") +
-#   coord_flip() +
-#   theme_linedraw()
-# 
-# p <- (p1+p2) + plot_annotation(title="Gene correlations with LEP");p
-# pdf(file = file.path(DIR_FIG, "LEP_gene_corr_C3-C4.pdf"), width = 10, height = 8, useDingbats = F);p;dev.off()
-# 
-# write.csv(gene_df_out, file.path(DIR_FIG, "LEP_gene_corr_C3-C4.csv"), row.names = F)
-
-#' ==================================================================
 
 
