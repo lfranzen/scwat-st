@@ -168,13 +168,6 @@ CalculateGeneInsulinRatio <- function (
         stop(paste0("No samples detected for subject ", s, " in the provided data"))
       }
       
-      #' TODO: Include? Not neeeded if expression set to NA in ComputeMeanSpotExpr() if too few spots
-      #' If either no expression in before or in after samples, 
-      #' set ratio to 1 for that gene. 
-      # genes_avg0_0 <- rownames(bulk.data[bulk.data[, sample_c_0] == 0,])
-      # genes_avg0_1 <- rownames(bulk.data[bulk.data[, sample_c_1] == 0,])
-      # data_ratios_sc[unique(c(genes_avg0_0, genes_avg0_1)), "ratio"] <- 1
-      
       #' Prepare output
       colnames(data_ratios_sc) <- paste0(c, ".", s)
       data_ratios_sc$gene <- rownames(data_ratios_sc)
