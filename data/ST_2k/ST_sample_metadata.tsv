@@ -1,7 +1,0 @@
-sample_id	subject_id	subject_alias	tissue_id	gender	condition	BMI	seu_n	n_spots
-S1	4971_C1	Ob.1	4971	female	obese	31	1	1705
-S2	4971_C2	Ob.1	4971	female	obese	31	2	1898
-S3	6983_D1	Le.1	6983	female	lean	22.5	3	810
-S4	6983_D2	Le.1	6983	female	lean	22.5	4	855
-S5	6985_E1	Ob.2	6985	male	obese	32.2	5	769
-S6	6985_E2	Ob.2	6985	male	obese	32.2	6	260
