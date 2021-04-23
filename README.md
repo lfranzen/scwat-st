@@ -1,4 +1,4 @@
-# *Spatial Mapping Reveals Adipocyte Heterogeneity as a Determinant of Insulin Response (preliminary title)*   
+# *Spatial Mapping Reveals Human Adipocyte Subpopulations with Distinct Sensitivities to Insulin*
 
 **Jesper Bäckdahl§, Lovisa Franzén§, Lucas Massier, Qian Li, Jutta Jalkanen, Hui Gao, Alma Andersson, Nayanika Bhalla, Anders Thorell, Mikael Rydén§, Patrik L. Ståhl§, Niklas Mejhert§**
 
@@ -35,5 +35,4 @@ Publication: *TBD*
 For questions related to the Visium data and related code, please contact Lovisa Franzén (lovisa.franzen@scilifelab.se)  
 
 For questions related to the image analysis and adipocyte size determination, please contact Lucas Massier (lucas.massier@ki.se)  
-
 
