@@ -30,6 +30,10 @@ Publication: *TBD*
 * `doc`: Contains html output reports, pdf with data analysis overview flowchart, and other documents  
 
 
+
+This project is licensed under the terms of the MIT license.
+
+
 ## Contact  
 
 For questions related to the Visium data and related code, please contact Lovisa Franzén (lovisa.franzen@scilifelab.se)  
