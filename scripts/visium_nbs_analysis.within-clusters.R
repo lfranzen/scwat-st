@@ -471,7 +471,7 @@ for(rand_seed in 1:3){
   set.seed(seed = rand_seed)
   se_metadata_perm <- se_metadata %>% 
     dplyr::group_by(sample_id) %>% 
-    dplyr::mutate(clusters_perm = seurat_clusters[sample(dplyr::row_number())])
+    dplyr::mutate(clusters_perm = clusters_original[sample(dplyr::row_number())])
   se.object <- AddMetaData(se.object, as.character(se_metadata_perm$clusters_perm), col.name = "clusters_perm")
   
   spatnet_perm <- do.call(rbind, lapply(seq_along(spatnet_init), function(i) {
