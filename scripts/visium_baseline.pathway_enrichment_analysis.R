@@ -1,7 +1,18 @@
 #'===========================
 #' Pathway analysis of adipocytes
 #' 
-#' Pathway analysis of marker genes identified for the adipocyte as a group. Enrichment analysis using GO and Reactome.
+#' 
+#' Decription:
+#' Markers for adipocytes identified using Seurat::FindMarker() function
+#' where the three adipocyte subtypes were compared against all other
+#' annotated clusters (i.e not including the "unspecific" clusters).
+#' Genes with a avg_logFC>0.1 and adjusted p-value <0.05 were selected and
+#' converted to entrez IDs. Two genes lacked entrez IDs (FAM213A, PLA2G16) 
+#' and were excluded. Pathway ennrichment analysis was thereafter performed
+#' using the clusterProfiler R package to enrich for GO-terms using enrichGO(),
+#' Reactome pathways using ReactomePA::enrichPathway(), and KEGG pathways 
+#' using enrichKEGG() with default settings applied (BH correction, p-value < 0.05).
+#' 
 #' 
 #' L. Franzén, 2021 June 
 #'===========================
@@ -25,17 +36,7 @@ DIR_OUT <- file.path(getwd(), "results", "visium", "tables")
 DIR_WD <- file.path(getwd(), "scripts")
 
 #' Read data
-metadata <- read.delim(file.path(DIR_IN, "visium_sample_metadata.tsv"), sep = "\t", stringsAsFactors = F)
-
-if (ANALYSIS == "baseline") {
-  se_base <- readRDS(file.path(DIR_OUT, "..", "se-object.visium_baseline.rds"))
-  se <- se_base
-} else if (ANALYSIS == "insulin") {
-  se_ins <- readRDS(file.path(DIR_OUT, "..", "se-object.visium_insulin.rds"))
-  se <- se_ins
-  se <- AddMetaData(se, metadata = paste0(se$subject_id, "_", se$insulin_stim, "_", se$sample_id), col.name = "subject_id")
-}
-
+se <- readRDS(file.path(DIR_OUT, "..", "se-object.visium_baseline.rds"))
 
 #============================================
 #' Identify markers
@@ -87,23 +88,15 @@ write_xlsx(
   format_headers = TRUE
 )
 
-#' Simple plots
-p1 <- dotplot(pw, showCategory=10) + ggtitle("GO")
-p2 <- dotplot(pw_ra, showCategory=10) + ggtitle("Reactome")
-p3 <- dotplot(pw_kegg, showCategory=10) + ggtitle("KEGG")
+#' Plots
+color_low <- "#441153"
+color_low2 <- "#62376e"
+p1 <- dotplot(pw, showCategory=10) + ggtitle("GO") + scale_color_gradient(low = color_low2, high = "grey80")
+p2 <- dotplot(pw_ra, showCategory=10) + ggtitle("Reactome") + scale_color_gradient(low = color_low2, high = "grey80")
+p3 <- dotplot(pw_kegg, showCategory=10) + ggtitle("KEGG") + scale_color_gradient(low = color_low2, high = "grey80")
 
 p <- p1/p2/p3
 fname <- paste0(ANALYSIS_ID, ".adipocyte_markers_pathwayenrichment")
-pdf(useDingbats = F, file = file.path(DIR_OUT, "../figures", paste0(fname, ".pdf")), width = 12, height = 12);p;dev.off()
+pdf(useDingbats = F, file = file.path(DIR_OUT, "../figures", paste0(fname, ".pdf")), width = 11, height = 11);p;dev.off()
 
-
-#============================================
-#' Markers for adipocytes identified using Seurat::FindMarker() function
-#' where the three adipocyte subtypes were compared against all other
-#' annotated clusters (i.e not including the "unspecific" clusters).
-#' Genes with a avg_logFC>0.1 and adjusted p-value <0.05 were selected and
-#' converted to entrez IDs. Two genes lacked entrez IDs (FAM213A, PLA2G16) 
-#' and were excluded. Pathway ennrichment analysis was thereafter performed
-#' using the clusterProfiler R package to enrich for GO-terms using enrichGO(),
-#' Reactome pathways using ReactomePA::enrichPathway(), and KEGG pathways 
-#' using enrichKEGG() with default settings applied (BH correction, p-value < 0.05).
+#'===========================
