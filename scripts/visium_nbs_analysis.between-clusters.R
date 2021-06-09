@@ -5,7 +5,7 @@
 #' Visualize adjacency matrices as graphs and heatmaps. 
 #' 
 #' L. Franzén, lovisa.franzen@scilifelab.se
-#' Jan 2020
+#' Jan 2021
 ########################
 
 # ===================================

@@ -5,7 +5,7 @@
 #' by computing the average degree for each cluster and sample
 #' 
 #' L. Franzén, lovisa.franzen@scilifelab.se
-#' Jan 2020
+#' Jan 2021
 ########################
 
 #' SET UP
