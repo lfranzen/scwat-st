@@ -1,5 +1,10 @@
+#'====================================================
 #' Functions for performing the Visium neighborhood analyses 
 #' to compute homotypic and heterotypic clustering scores.
+#' 
+#' L. Franzén, lovisa.franzen@scilifelab.se
+#' June 2021
+#'====================================================
 
 library(STutility)
 library(magrittr)
@@ -12,7 +17,7 @@ library(magrittr)
 #' Calculate average degree for spatial data
 #' 
 #' @param se.object Seurat (STUtility) object containing cluster and sample identities for each spot in the metadata.
-#' @param column.clusters.id Column name in metadata corresponding to cluster ID of the spots. Default "seurat_clusters".
+#' @param column.cluster.id Column name in metadata corresponding to cluster ID of the spots. Default "seurat_clusters".
 #' @param column.sample.id Column name in metadata corresponding to Sample ID of the spots.
 #' @param se.SpatNet (Optional) Provide the output from GetSpatNet(se.object). Default is NA (i.e computed within the function).
 #' @return Data frame containing average degree for network.
@@ -79,12 +84,13 @@ CalculateAvgDegree <- function (
 #' Randomise Cluster IDs within Subject data and calculate average degree
 #' 
 #' @param se.object Seurat (STUtility) object containing cluster and sample identities for each spot in the metadata.
-#' @param column.clusters.id Column name in metadata corresponding to cluster ID of the spots. Default "seurat_clusters".
+#' @param column.cluster.id Column name in metadata corresponding to cluster ID of the spots. Default "seurat_clusters".
 #' @param column.sample.id Column name in metadata corresponding to Sample ID of the spots.
+#' @param n.perm Number of random permutation to run (positive integer).
 #' @param random.seed (Optional) Random seed for the random sampling. Default is NA.
-#' @return Data frame containing average degree for network.
+#' @return Data frame, or list of data frames, containing average degree for network.
 #' @export
-RandomClusteringAvgDegree <- function (
+RandomClustersAvgDegree <- function (
   se.object,
   column.cluster.id,
   column.sample.id,
@@ -123,21 +129,21 @@ RandomClusteringAvgDegree <- function (
     for(i in seq(1, n.perm)){
       message(paste0("Running for multiple permutations: ", i, "/", n.perm))
       se_spat_net <- GetSpatNet(se.object)
-      k_avg_perm_list[[i]] <- RandomClusteringAvgDegree(se.object = se.object, 
-                                                        column.sample.id = column.sample.id, 
-                                                        column.cluster.id = column.cluster.id, 
-                                                        se.SpatNet = se_spat_net,
-                                                        n.perm=1)
+      k_avg_perm_list[[i]] <- RandomClustersAvgDegree(se.object = se.object, 
+                                                      column.sample.id = column.sample.id, 
+                                                      column.cluster.id = column.cluster.id, 
+                                                      se.SpatNet = se_spat_net,
+                                                      n.perm=1)
       }
     return(k_avg_perm_list)
-  } else if (n.perm < 0) {warning("Number of random permutations must be a positive integer")}
+  } else if (n.perm < 0) {stop("Number of random permutations must be a positive integer")}
 }
 
 
 #' Compare observed vs expected average degree scores by computing the "homotypic score" (avg k exp-obs)
 #' 
 #' @param avk.k.observed data frame with the observed average degree values for each cluster and sample (output from CalculateAvgDegree function)
-#' @param avk.k.expected List of data frames with the randomised average degree values for each cluster and sample (output from RandomClusteringAvgDegree function where n.perm>1)
+#' @param avk.k.expected List of data frames with the randomised average degree values for each cluster and sample (output from RandomClustersAvgDegree function where n.perm>1)
 #' @param return.score Which format the homotypic score output should be provided as. Defult is "difference". Other option is "z-score".
 #' @return Data frame with homotypic scores for each cluster 
 #' @export
@@ -178,11 +184,234 @@ CalculateHomotypicScore <- function (
 
 
 #'====================================================================================
-# HETEROTYPIC SCORE CALCULATION - BETWEEN-CLUSTER ANALYSIS - TO DO...
+# HETEROTYPIC SCORE CALCULATION - BETWEEN-CLUSTER ANALYSIS
 #'====================================================================================
 
+#' Create Adjacency Matrix
+#' 
+#' @param nbs.df Data frame with output from STUtility::GetSpatNet() data for all clusters of interest. Rows should correspond to spot ID and columns should include cluster IDs as well as colums starting with "nbs_".
+#' @param column.cluster.id Column name in nbs.df corresponding to cluster ID of the spots. Default "seurat_clusters".
+#' @param cluster.include Vector of cluster IDs to include in your analysis. Default is all (NA).
+#' @return Adjacency matrix with number of neighbours present between each cluster pair
+#' @export
+CreateAdjMatrix <- function(
+  nbs.df,
+  column.cluster.id = "seurat_clusters",
+  cluster.include = NA
+){
+  if (length(cluster.include)==1 & is.na(cluster.include)) {
+    cluster.include <- seq(1, max(as.numeric(nbs.df[,1])), 1)
+  }
+  
+  nbs_adjmat <- matrix(0L, nrow = length(cluster.include), ncol = length(cluster.include))
+  
+  for (i in seq_along(cluster.include)) {
+    c <- cluster.include[i]
+    c_nbs_df <- nbs.df[nbs.df[,column.cluster.id]==c, ]
+    for (j in seq_along(cluster.include)) {
+      nbs <- paste0("nbs_", cluster.include[j])
+      if (j==i) {
+        n_nbs <- sum(!is.na(c_nbs_df[, nbs]==c))
+      } else {
+        n_nbs <- sum(!is.na(c_nbs_df[, nbs]==nbs))
+      }
+      nbs_adjmat[i,j] <- n_nbs
+      if (nbs_adjmat[j,i] > 0) {
+        nbs_adjmat[i,j] <- nbs_adjmat[j,i] <- max(c(nbs_adjmat[i,j], nbs_adjmat[j,i]))
+      }
+    }
+    nbs_adjmat[i,i] <- sum(nbs_adjmat[i,][-i])
+  }
+  
+  return(nbs_adjmat)
+}
 
 
+#' Create Adjacency Matrix per Subject
+#' 
+#' @param nbs.df Data frame with output from STUtility::GetSpatNet() data for all clusters of interest. Rows should correspond to spot ID and columns should include cluster IDs as well as colums starting with "nbs_".
+#' @param se.metadata Metadata dataframe from seurat object containing Sample IDs for each spot.
+#' @param column.cluster.id Column name in nbs.df corresponding to cluster ID of the spots. Default "seurat_clusters".
+#' @param cluster.include Vector of cluster IDs to include in your analysis.
+#' @param column.subject.id Column name in se.metadata corresponding to Sample ID of the spots.
+#' @return List of adjacency matrices with number of neighbours present between each cluster pair. Each matrix in the list corresponds to data from one sample.
+#' @export
+CreateAdjMatrixPerSubject <- function(
+  nbs.df,
+  se.metadata,
+  column.cluster.id = "seurat_clusters",
+  cluster.include,
+  column.subject.id
+){
+  nbs_adjmat_list <- list()
+  subjects_include <- unique(as.character(se.metadata[, column.subject.id]))
+  
+  for(subject_id in subjects_include){
+    rows_subject <- rownames(se.metadata[se.metadata[,column.subject.id] %in% subject_id, ])
+    nbs.df_subject <- nbs.df[rows_subject, ]
+    
+    nbs_adjmat <- CreateAdjMatrix(nbs.df = nbs.df_subject, 
+                                  cluster.include = cluster.include, 
+                                  column.cluster.id = column.cluster.id)
+    
+    nbs_adjmat_list[[subject_id]] <- nbs_adjmat
+  }
+  
+  return(nbs_adjmat_list)
+}
 
 
+#' Randomise Cluster IDs within Subject data
+#' 
+#' @param se.object Seurat (STUtility) object containing cluster and sample identities for each spot in the metadata.
+#' @param column.cluster.id Column name in metadata corresponding to cluster ID of the spots. Default "seurat_clusters".
+#' @param column.subject.id Column name in metadata corresponding to Sample ID of the spots.
+#' @return New Seurat object with shuffled cluster identities per sample
+#' @export
+RandomiseClusteringIDs <- function (
+  se.object,
+  column.cluster.id,
+  column.sample.id,
+  random.seed = NA
+) {
+  if(!is.na(random.seed)){
+    message(paste("Setting random seed to", random.seed))
+    set.seed(random.seed)
+  }
+  
+  #' Shuffle cluster ids for each sample
+  se_metadata <- se.object@meta.data[, c(column.cluster.id, column.sample.id)]
+  se_metadata$clusters_original <- se_metadata[, column.cluster.id]
+  se_metadata$sample_id <- se_metadata[, column.sample.id]
+  
+  se_metadata_perm <- se_metadata %>% 
+    dplyr::group_by(sample_id) %>% 
+    dplyr::mutate(clusters_perm = clusters_original[sample(dplyr::row_number())])
+  
+  #' Add shuffled clusters to se object metadata
+  se.object <- AddMetaData(se.object, as.character(se_metadata_perm$clusters_perm), col.name = "clusters_perm")
+  
+  return(se.object)
+}
+
+
+minmax_norm <- function(x) {
+  return ((x - min(x)) / (max(x) - min(x)))
+}
+
+
+#' Randomise Cluster IDs within Subject data and calculate average degree
+#' 
+#' @param se.object Seurat (STUtility) object containing cluster and sample identities for each spot in the metadata.
+#' @param column.cluster.id Column name in metadata corresponding to cluster ID of the spots. Default "seurat_clusters".
+#' @param column.sample.id Column name in metadata corresponding to Sample ID of the spots.
+#' @param cluster.include Vector of cluster IDs to include in your analysis. Default is all (NA). 
+#' @param n.perm Number of random permutation to run (positive integer).
+#' @param random.seed (Optional) TRUE/FALSE. Random seed for the random sampling. Default is FALSE
+#' @return List of data frames containing adjacency matrices.
+#' @export
+RandomClustersAdjMat <- function (
+  se.object,
+  column.cluster.id,
+  column.sample.id,
+  cluster.include = NA,
+  n.perm = 1,
+  random.seed = FALSE
+) {
+  
+  perm_adj_mat_list <- list()
+  
+  for (i in 1:n.perm) {
+    message(paste0("Running function for multiple permutations: ", i, "/", n.perm))
+    if (random.seed) {
+      se.object <- RandomiseClusteringIDs(se.object = se.object, 
+                                          column.cluster.id = column.cluster.id, 
+                                          column.sample.id = column.sample.id, 
+                                          random.seed = i)
+    } else {
+      se.object <- RandomiseClusteringIDs(se.object = se.object, 
+                                          column.cluster.id = column.cluster.id, 
+                                          column.sample.id = column.sample.id)
+    }
+    
+    se.object <- SetIdent(se.object, value = "clusters_perm")
+    
+    for (column_rm in grep(pattern = "nbs_", colnames(se.object@meta.data), value = T)) {
+      se.object[[column_rm]] <- NULL
+    }
+    
+    if (length(cluster.include)==1 & is.na(cluster.include)){
+      message("Returning values for all clusters")
+      cluster.include <- seq(1, max(as.numeric(se.object@meta.data[, column.cluster.id])), 1)
+    }
+    
+    for (c in cluster.include){
+      se.object <- STutility::RegionNeighbours(se.object, 
+                                               id = c, 
+                                               keep.within.id = T, 
+                                               verbose = TRUE)
+    }
+    
+    perm_nbs_df <- se.object@meta.data[, c("clusters_perm", grep(pattern = "nbs_", colnames(se.object@meta.data), value = T))]
+    
+    perm_adj_mat <- CreateAdjMatrix(nbs.df = perm_nbs_df, 
+                                    cluster.include = cluster.include, 
+                                    column.cluster.id = "clusters_perm")
+    perm_adj_mat_list[[i]] <- perm_adj_mat
+  }
+  return(perm_adj_mat_list)
+}
+
+
+#' Calculate position-wise mean and standard deviation from list of adjacency matrices
+#' 
+#' @param adj.mat.list List of ajacency matrices to calculate position-wise mean and standard deviation
+#' @return S4 object with mean and standard deviation (sd) matrices
+#' @export
+CalulateMeanSdAdjMatList <- function (
+  adj.mat.list
+  ) {
+  n_cols <- dim(adj.mat.list[[1]])[1]
+  perm_adj_mat_avg <- perm_adj_mat_sd <- matrix(0L, nrow = n_cols, ncol = n_cols)
+  for(i in 1:n_cols){
+    for(j in 1:n_cols){
+      list_ij <- c()
+      for(list_n in 1:length(adj.mat.list)){
+        list_ij <- c(list_ij, adj.mat.list[[list_n]][i,j])
+      }
+      perm_adj_mat_avg[i,j] <- mean(list_ij)
+      perm_adj_mat_sd[i,j] <- sd(list_ij)
+    }
+  }
+  setClass("AdjMat", representation(mean = "matrix", sd = "matrix"))
+  output_obj <- new("AdjMat", 
+                    mean=perm_adj_mat_avg, 
+                    sd=perm_adj_mat_sd)
+  return(output_obj)
+}
+
+
+#' Compare observed vs expected average degree scores by computing the "heterotypic score"
+#' 
+#' @param adj.mat.observed Adjacency matrix with observed values
+#' @param adj.mat.expected.mean Adjacency matrix with position-wise mean of expected values from multiple permutations
+#' @param adj.mat.expected.sd Adjacency matrix with position-wise standard deviation (sd) of expected values from multiple permutations
+#' @param cluster.ids (Optional) Provide vector with names of clusters
+#' @return Adjacency matrix with position-wise heterotypic scores (z-scores)
+#' @export
+CalculateHeterotypicScore <- function (
+  adj.mat.observed,
+  adj.mat.expected.mean,
+  adj.mat.expected.sd,
+  cluster.ids = NA
+) {
+  nbs_adjmat_zsore <- round( ((adj.mat.observed - adj.mat.expected.mean) / adj.mat.expected.sd) , digits = 3)
+  diag(nbs_adjmat_zsore) <- diag(adj.mat.observed)
+  if(!is.na(cluster.ids)){
+    rownames(nbs_adjmat_zsore) <- colnames(nbs_adjmat_zsore) <- cluster.ids
+  } else (
+    rownames(nbs_adjmat_zsore) <- colnames(nbs_adjmat_zsore) <- paste0("C", as.character(1:ncol(adj.mat.observed)))
+  )
+  return(nbs_adjmat_zsore)
+}
 
