@@ -7,12 +7,12 @@
 
 ## Description  
 
-This repo contains all R code and smaller tables related to the publication xxx (TBD) by Bäckdahl J & Franzén L, et al. 
+This repo contains all R code and smaller tables related to the publication by ![Bäckdahl J & Franzén L, et al (2021)](https://doi.org/10.1016/j.cmet.2021.07.018). 
 
 In this project, we performed spatial transcriptomics, using the 10x Genomic's Visium platform, on abdominal subcutaneous white adipose tissue (scWAT) to generate data from a total of ten human subjects. The subjects are of a range of different ages and with different body mass index (BMI). Four of the subjects were subjected to euglycemic hyperinsulinemic clamp with samples collected before and after – the data from these samples were used in the "insulin" analyses.  
 
 
-Publication: *TBD*
+Publication: Bäckdahl et al., "Spatial mapping reveals human adipocyte subpopulations with distinct sensitivities to insulin", Cell Metabolism, 10 Augusti 2021 (online), DOI:10.1016/j.cmet.2021.07.018
 
 
 ![Manuscript figure](/doc/manus_fig_overview.png)
